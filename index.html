@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Call Center · مركز الاتصال</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1a2230; --panel2:#222c3d; --line:#2c3646;
+    --ink:#eef2f7; --muted:#93a1b5; --brand:#3b82f6; --brand2:#2563eb;
+    --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --violet:#8b5cf6;
+    --teal:#14b8a6; --slate:#64748b; --pink:#ec4899;
+    --radius:14px; --shadow:0 6px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:'Inter','Cairo',system-ui,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
+  body[dir="rtl"]{font-family:'Cairo','Inter',system-ui,sans-serif}
+  #root{min-height:100vh}
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:10px;font-weight:600;transition:.15s}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  input,select,textarea{font-family:inherit;background:var(--panel2);color:var(--ink);
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;width:100%}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand)}
+  a{color:var(--brand)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .btn-primary{background:var(--brand);color:#fff;padding:11px 18px}
+  .btn-primary:hover{background:var(--brand2)}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);padding:9px 14px}
+  .btn-ghost:hover{color:var(--ink);border-color:var(--brand)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:700}
+  .spin{width:38px;height:38px;border:3px solid var(--line);border-top-color:var(--brand);
+    border-radius:50%;animation:sp 1s linear infinite;margin:60px auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .row{display:flex;gap:12px;align-items:center}
+  .grid{display:grid;gap:14px}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:11px 12px;text-align:start;border-bottom:1px solid var(--line);font-size:13.5px}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr:hover td{background:var(--panel2)}
+  .stat{padding:18px 20px}
+  .stat .num{font-size:30px;font-weight:800;line-height:1}
+  .stat .lbl{color:var(--muted);font-size:12.5px;margin-top:7px;font-weight:600}
+  .tabbar{display:flex;gap:4px;background:var(--panel);padding:5px;border-radius:12px;border:1px solid var(--line)}
+  .tabbar button{flex:1;padding:10px;background:transparent;color:var(--muted)}
+  .tabbar button.active{background:var(--brand);color:#fff}
+  .toast{position:fixed;bottom:22px;inset-inline-end:22px;background:var(--panel2);
+    border:1px solid var(--line);border-inline-start:4px solid var(--green);
+    padding:13px 18px;border-radius:10px;box-shadow:var(--shadow);z-index:99;max-width:340px}
+  .toast.err{border-inline-start-color:var(--red)}
+  label.fld{display:block;margin-bottom:14px}
+  label.fld span{display:block;color:var(--muted);font-size:12.5px;margin-bottom:6px;font-weight:600}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;
+    justify-content:center;z-index:50;padding:16px}
+</style>
+</head>
+<body>
+<div id="root"><div class="spin"></div></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+/* ============================================================
+   CONFIG  — paste your Supabase project URL + anon key here
+   (Supabase dashboard → Project Settings → API)
+   ============================================================ */
+const SUPABASE_URL  = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON = "YOUR_SUPABASE_ANON_KEY";
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+/* ---------------- i18n ---------------- */
+const T = {
+  en: {
+    dir:"ltr", appName:"Call Center", tagline:"Client re-engagement",
+    login:"Sign in", email:"Email", password:"Password", signingIn:"Signing in…",
+    logout:"Sign out", admin:"Admin", agent:"Agent",
+    myCalls:"My Calls", clients:"Clients", dashboard:"Dashboard",
+    agents:"Agents", assign:"Assign", reports:"Reports",
+    search:"Search name / phone…", city:"City", allCities:"All cities",
+    status:"Status", allStatus:"All statuses", callback:"Callbacks due",
+    logCall:"Log call", history:"History", noClients:"No clients to call right now.",
+    outcome:"Outcome", feedback:"Feedback (optional)", callbackTime:"Call back at",
+    save:"Save call", saving:"Saving…", cancel:"Cancel",
+    name:"Name", phone:"Phone", location:"Location", assignedTo:"Assigned to",
+    unassigned:"Unassigned", lastOutcome:"Last outcome", actions:"Actions",
+    totalCalls:"Total calls", answered:"Answered", interested:"Interested",
+    callsToday:"Calls today", answerRate:"Answer rate", agentName:"Agent",
+    assignClients:"Assign clients to agents", selectAgent:"Select agent",
+    howMany:"How many clients", byCity:"Filter by city (optional)",
+    onlyNew:"Only never-called clients", assignNow:"Assign now",
+    assigned:"Assigned {n} clients to {a}", noData:"No data yet",
+    callNow:"Call", markResult:"Log result for", perAgent:"Per-agent performance",
+    outcomes:{answered:"Answered",no_answer:"No answer",call_back:"Call back",
+      interested:"Interested",not_interested:"Not interested",
+      wrong_number:"Wrong number",blacklisted:"Blacklisted",new:"New"},
+    exportCsv:"Export CSV", callbacksToday:"Callbacks due today",
+    noCallbacks:"No callbacks scheduled.", welcome:"Welcome back",
+    remaining:"remaining", done:"done", loginErr:"Wrong email or password.",
+    pickOutcome:"Choose an outcome first.", callHistory:"Call history",
+    noHistory:"No calls logged yet.", by:"by", clientList:"Client list",
+    totalClients:"Total clients", contacted:"Contacted", notCalled:"Not called",
+    interestedC:"Interested", refresh:"Refresh",
+  },
+  ar: {
+    dir:"rtl", appName:"مركز الاتصال", tagline:"إعادة التواصل مع العملاء",
+    login:"تسجيل الدخول", email:"البريد الإلكتروني", password:"كلمة المرور",
+    signingIn:"جارٍ الدخول…", logout:"تسجيل الخروج", admin:"مدير", agent:"موظف",
+    myCalls:"مكالماتي", clients:"العملاء", dashboard:"لوحة التحكم",
+    agents:"الموظفون", assign:"توزيع", reports:"التقارير",
+    search:"ابحث بالاسم أو الرقم…", city:"المدينة", allCities:"كل المدن",
+    status:"الحالة", allStatus:"كل الحالات", callback:"مواعيد المعاودة",
+    logCall:"تسجيل مكالمة", history:"السجل", noClients:"لا يوجد عملاء للاتصال الآن.",
+    outcome:"نتيجة المكالمة", feedback:"ملاحظات (اختياري)", callbackTime:"معاودة الاتصال في",
+    save:"حفظ المكالمة", saving:"جارٍ الحفظ…", cancel:"إلغاء",
+    name:"الاسم", phone:"الهاتف", location:"العنوان", assignedTo:"مُسند إلى",
+    unassigned:"غير مُسند", lastOutcome:"آخر نتيجة", actions:"إجراءات",
+    totalCalls:"إجمالي المكالمات", answered:"تم الرد", interested:"مهتم",
+    callsToday:"مكالمات اليوم", answerRate:"نسبة الرد", agentName:"الموظف",
+    assignClients:"توزيع العملاء على الموظفين", selectAgent:"اختر الموظف",
+    howMany:"عدد العملاء", byCity:"تصفية بالمدينة (اختياري)",
+    onlyNew:"العملاء الذين لم يتم الاتصال بهم فقط", assignNow:"توزيع الآن",
+    assigned:"تم إسناد {n} عميل إلى {a}", noData:"لا توجد بيانات بعد",
+    callNow:"اتصال", markResult:"تسجيل نتيجة", perAgent:"أداء الموظفين",
+    outcomes:{answered:"تم الرد",no_answer:"لم يرد",call_back:"معاودة",
+      interested:"مهتم",not_interested:"غير مهتم",
+      wrong_number:"رقم خطأ",blacklisted:"قائمة سوداء",new:"جديد"},
+    exportCsv:"تصدير CSV", callbacksToday:"معاودات اليوم",
+    noCallbacks:"لا توجد معاودات مجدولة.", welcome:"أهلاً بعودتك",
+    remaining:"متبقٍ", done:"مكتمل", loginErr:"بريد أو كلمة مرور خاطئة.",
+    pickOutcome:"اختر النتيجة أولاً.", callHistory:"سجل المكالمات",
+    noHistory:"لا مكالمات مسجلة بعد.", by:"بواسطة", clientList:"قائمة العملاء",
+    totalClients:"إجمالي العملاء", contacted:"تم التواصل", notCalled:"لم يتم الاتصال",
+    interestedC:"مهتمون", refresh:"تحديث",
+  }
+};
+
+const OUTCOME_COLORS = {
+  answered:"var(--green)", no_answer:"var(--slate)", call_back:"var(--amber)",
+  interested:"var(--teal)", not_interested:"var(--muted)",
+  wrong_number:"var(--violet)", blacklisted:"var(--red)", new:"var(--brand)"
+};
+const OUTCOME_KEYS = ["answered","no_answer","call_back","interested",
+                      "not_interested","wrong_number","blacklisted"];
+
+/* ---------------- small helpers ---------------- */
+function useToast(){
+  const [toast,setToast]=useState(null);
+  const show=useCallback((msg,err=false)=>{
+    setToast({msg,err}); setTimeout(()=>setToast(null),3200);
+  },[]);
+  const node = toast ? <div className={"toast"+(toast.err?" err":"")}>{toast.msg}</div> : null;
+  return [node,show];
+}
+function Pill({outcome,t}){
+  const c=OUTCOME_COLORS[outcome]||"var(--slate)";
+  return <span className="pill" style={{background:c+"22",color:c}}>
+    <span style={{width:7,height:7,borderRadius:"50%",background:c}}></span>
+    {t.outcomes[outcome]||outcome}</span>;
+}
+function fmtDate(s,dir){
+  if(!s) return "—";
+  const d=new Date(s);
+  return d.toLocaleString(dir==="rtl"?"ar-EG":"en-GB",
+    {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+}
+/* ==================== LOGIN ==================== */
+function Login({lang,setLang,onLogin}){
+  const t=T[lang];
+  const [email,setEmail]=useState(""),[pw,setPw]=useState("");
+  const [busy,setBusy]=useState(false),[err,setErr]=useState("");
+  async function submit(){
+    setBusy(true); setErr("");
+    const {error}=await sb.auth.signInWithPassword({email:email.trim(),password:pw});
+    setBusy(false);
+    if(error){ setErr(t.loginErr); return; }
+    onLogin();
+  }
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="card" style={{width:400,maxWidth:"100%",padding:32}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <div style={{width:44,height:44,borderRadius:12,background:"var(--brand)",
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>📞</div>
+          <button className="btn-ghost" style={{padding:"6px 12px"}}
+            onClick={()=>setLang(lang==="en"?"ar":"en")}>{lang==="en"?"العربية":"English"}</button>
+        </div>
+        <h1 style={{margin:"14px 0 2px",fontSize:26,fontWeight:800}}>{t.appName}</h1>
+        <p style={{color:"var(--muted)",margin:"0 0 24px",fontSize:14}}>{t.tagline}</p>
+        <label className="fld"><span>{t.email}</span>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&submit()} autoFocus/></label>
+        <label className="fld"><span>{t.password}</span>
+          <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&submit()}/></label>
+        {err && <div style={{color:"var(--red)",fontSize:13,marginBottom:12}}>{err}</div>}
+        <button className="btn-primary" style={{width:"100%"}} disabled={busy} onClick={submit}>
+          {busy?t.signingIn:t.login}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== HEADER ==================== */
+function Header({t,lang,setLang,me,onLogout}){
+  return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+      padding:"16px 22px",borderBottom:"1px solid var(--line)",background:"var(--panel)"}}>
+      <div className="row" style={{gap:12}}>
+        <div style={{width:38,height:38,borderRadius:10,background:"var(--brand)",
+          display:"flex",alignItems:"center",justifyContent:"center",fontSize:19}}>📞</div>
+        <div>
+          <div style={{fontWeight:800,fontSize:16}}>{t.appName}</div>
+          <div style={{color:"var(--muted)",fontSize:12}}>
+            {me.full_name} · {me.role==="admin"?t.admin:t.agent}</div>
+        </div>
+      </div>
+      <div className="row" style={{gap:10}}>
+        <button className="btn-ghost" style={{padding:"7px 12px"}}
+          onClick={()=>setLang(lang==="en"?"ar":"en")}>{lang==="en"?"العربية":"English"}</button>
+        <button className="btn-ghost" style={{padding:"7px 12px"}} onClick={onLogout}>{t.logout}</button>
+      </div>
+    </div>
+  );
+}
+/* ==================== LOG CALL MODAL ==================== */
+function LogCallModal({t,client,me,onClose,onSaved,showToast}){
+  const [outcome,setOutcome]=useState("");
+  const [feedback,setFeedback]=useState("");
+  const [cbAt,setCbAt]=useState("");
+  const [busy,setBusy]=useState(false);
+  async function save(){
+    if(!outcome){ showToast(t.pickOutcome,true); return; }
+    setBusy(true);
+    const row={client_id:client.id, agent_id:me.id, outcome, feedback:feedback||null,
+      callback_at: (outcome==="call_back" && cbAt)? new Date(cbAt).toISOString(): null};
+    const {error}=await sb.from("call_logs").insert(row);
+    setBusy(false);
+    if(error){ showToast(error.message,true); return; }
+    onSaved();
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="card" style={{width:460,maxWidth:"100%",padding:26}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:600}}>{t.markResult}</div>
+        <h2 style={{margin:"3px 0 4px",fontSize:21,fontWeight:800}}>{client.name||"—"}</h2>
+        <div className="row" style={{gap:8,marginBottom:18}}>
+          <a href={"tel:"+client.phone} className="pill" style={{background:"var(--brand)22",color:"var(--brand)",fontSize:14,textDecoration:"none"}}>
+            📞 {client.phone}</a>
+          {client.city && <span style={{color:"var(--muted)",fontSize:13}}>{client.city}</span>}
+        </div>
+        <label className="fld"><span>{t.outcome}</span>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {OUTCOME_KEYS.map(k=>{
+              const on=outcome===k, c=OUTCOME_COLORS[k];
+              return <button key={k} onClick={()=>setOutcome(k)}
+                style={{padding:"10px",textAlign:"start",background:on?c+"22":"var(--panel2)",
+                  color:on?c:"var(--ink)",border:"1px solid "+(on?c:"var(--line)"),borderRadius:9,fontSize:13}}>
+                {t.outcomes[k]}</button>;
+            })}
+          </div>
+        </label>
+        {outcome==="call_back" &&
+          <label className="fld"><span>{t.callbackTime}</span>
+            <input type="datetime-local" value={cbAt} onChange={e=>setCbAt(e.target.value)}/></label>}
+        <label className="fld"><span>{t.feedback}</span>
+          <textarea rows="3" value={feedback} onChange={e=>setFeedback(e.target.value)}></textarea></label>
+        <div className="row" style={{justifyContent:"flex-end",gap:10,marginTop:6}}>
+          <button className="btn-ghost" onClick={onClose}>{t.cancel}</button>
+          <button className="btn-primary" disabled={busy} onClick={save}>{busy?t.saving:t.save}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== HISTORY MODAL ==================== */
+function HistoryModal({t,client,onClose}){
+  const [logs,setLogs]=useState(null);
+  useEffect(()=>{(async()=>{
+    const {data}=await sb.from("call_logs").select("*, profiles(full_name)")
+      .eq("client_id",client.id).order("created_at",{ascending:false});
+    setLogs(data||[]);
+  })();},[client.id]);
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="card" style={{width:520,maxWidth:"100%",padding:26,maxHeight:"80vh",overflow:"auto"}}
+        onClick={e=>e.stopPropagation()}>
+        <h2 style={{margin:"0 0 3px",fontSize:20,fontWeight:800}}>{t.callHistory}</h2>
+        <div style={{color:"var(--muted)",fontSize:13,marginBottom:18}}>{client.name} · {client.phone}</div>
+        {logs===null? <div className="spin"></div> :
+         logs.length===0? <div style={{color:"var(--muted)",padding:"20px 0"}}>{t.noHistory}</div> :
+         logs.map(l=>(
+           <div key={l.id} style={{padding:"12px 0",borderBottom:"1px solid var(--line)"}}>
+             <div className="row" style={{justifyContent:"space-between"}}>
+               <Pill outcome={l.outcome} t={t}/>
+               <span style={{color:"var(--muted)",fontSize:12}}>{fmtDate(l.created_at,t.dir)}</span>
+             </div>
+             {l.feedback && <div style={{marginTop:7,fontSize:13.5}}>{l.feedback}</div>}
+             <div style={{color:"var(--muted)",fontSize:11.5,marginTop:5}}>
+               {t.by} {l.profiles?.full_name||"—"}
+               {l.callback_at? " · ⏰ "+fmtDate(l.callback_at,t.dir):""}</div>
+           </div>
+         ))}
+        <div className="row" style={{justifyContent:"flex-end",marginTop:16}}>
+          <button className="btn-ghost" onClick={onClose}>{t.cancel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== AGENT VIEW ==================== */
+function AgentView({t,me,showToast}){
+  const [clients,setClients]=useState(null);
+  const [q,setQ]=useState(""); const [cityF,setCityF]=useState(""); const [statF,setStatF]=useState("");
+  const [logFor,setLogFor]=useState(null); const [histFor,setHistFor]=useState(null);
+
+  const load=useCallback(async()=>{
+    const {data}=await sb.from("clients").select("*")
+      .eq("assigned_to",me.id).order("status",{ascending:true}).order("id");
+    setClients(data||[]);
+  },[me.id]);
+  useEffect(()=>{load();},[load]);
+
+  const cities=useMemo(()=>[...new Set((clients||[]).map(c=>c.city).filter(Boolean))].sort(),[clients]);
+  const filtered=useMemo(()=>(clients||[]).filter(c=>{
+    if(cityF && c.city!==cityF) return false;
+    if(statF && c.status!==statF) return false;
+    if(q){ const s=(c.name||"")+" "+(c.phone||""); if(!s.toLowerCase().includes(q.toLowerCase())) return false; }
+    return true;
+  }),[clients,q,cityF,statF]);
+
+  const done=(clients||[]).filter(c=>c.status!=="new").length;
+  const total=(clients||[]).length;
+
+  if(clients===null) return <div className="spin"></div>;
+
+  return (
+    <div className="grid" style={{gap:16}}>
+      <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div>
+          <div style={{fontSize:13,color:"var(--muted)"}}>{t.welcome}, {me.full_name}</div>
+          <div style={{fontSize:20,fontWeight:800}}>{t.myCalls}
+            <span style={{color:"var(--muted)",fontWeight:600,fontSize:15}}> · {total-done} {t.remaining} / {done} {t.done}</span></div>
+        </div>
+        <button className="btn-ghost" onClick={load}>↻ {t.refresh}</button>
+      </div>
+
+      <div className="card" style={{padding:14}}>
+        <div className="grid" style={{gridTemplateColumns:"2fr 1fr 1fr",gap:10}}>
+          <input placeholder={t.search} value={q} onChange={e=>setQ(e.target.value)}/>
+          <select value={cityF} onChange={e=>setCityF(e.target.value)}>
+            <option value="">{t.allCities}</option>
+            {cities.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={statF} onChange={e=>setStatF(e.target.value)}>
+            <option value="">{t.allStatus}</option>
+            {["new",...OUTCOME_KEYS].map(s=><option key={s} value={s}>{t.outcomes[s]}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="card" style={{overflow:"auto"}}>
+        {filtered.length===0? <div style={{padding:40,textAlign:"center",color:"var(--muted)"}}>{t.noClients}</div> :
+        <table>
+          <thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th>
+            <th>{t.status}</th><th style={{textAlign:"end"}}>{t.actions}</th></tr></thead>
+          <tbody>
+          {filtered.map(c=>(
+            <tr key={c.id}>
+              <td style={{fontWeight:600}}>{c.name||"—"}</td>
+              <td><a href={"tel:"+c.phone} style={{textDecoration:"none"}}>{c.phone}</a></td>
+              <td style={{color:"var(--muted)"}}>{c.city||"—"}</td>
+              <td><Pill outcome={c.status} t={t}/></td>
+              <td style={{textAlign:"end",whiteSpace:"nowrap"}}>
+                <button className="btn-ghost" style={{padding:"6px 10px",marginInlineEnd:6}}
+                  onClick={()=>setHistFor(c)}>🕘</button>
+                <button className="btn-primary" style={{padding:"6px 14px"}}
+                  onClick={()=>setLogFor(c)}>{t.logCall}</button>
+              </td>
+            </tr>
+          ))}
+          </tbody>
+        </table>}
+      </div>
+
+      {logFor && <LogCallModal t={t} client={logFor} me={me}
+        onClose={()=>setLogFor(null)}
+        onSaved={()=>{setLogFor(null); showToast(t.save+" ✓"); load();}} showToast={showToast}/>}
+      {histFor && <HistoryModal t={t} client={histFor} onClose={()=>setHistFor(null)}/>}
+    </div>
+  );
+}
+/* ==================== ADMIN: DASHBOARD ==================== */
+function AdminDashboard({t}){
+  const [stats,setStats]=useState(null);
+  const [totals,setTotals]=useState(null);
+  const load=useCallback(async()=>{
+    const {data:ag}=await sb.from("agent_stats").select("*");
+    setStats(ag||[]);
+    const {data:cl}=await sb.from("clients").select("status");
+    const c={total:cl?.length||0,contacted:0,notCalled:0,interested:0};
+    (cl||[]).forEach(r=>{
+      if(r.status==="new") c.notCalled++; else c.contacted++;
+      if(r.status==="interested") c.interested++;
+    });
+    setTotals(c);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  if(stats===null||totals===null) return <div className="spin"></div>;
+
+  const sum=(k)=>stats.reduce((a,s)=>a+(s[k]||0),0);
+  const totalCalls=sum("total_calls"), answered=sum("answered"),
+    interested=sum("interested"), today=sum("calls_today");
+  const answerRate=totalCalls? Math.round(answered/totalCalls*100):0;
+
+  const cards=[
+    {n:totals.total,l:t.totalClients,c:"var(--brand)"},
+    {n:totals.contacted,l:t.contacted,c:"var(--green)"},
+    {n:totals.notCalled,l:t.notCalled,c:"var(--slate)"},
+    {n:totals.interested,l:t.interestedC,c:"var(--teal)"},
+    {n:totalCalls,l:t.totalCalls,c:"var(--violet)"},
+    {n:today,l:t.callsToday,c:"var(--amber)"},
+    {n:answerRate+"%",l:t.answerRate,c:"var(--green)"},
+    {n:interested,l:t.interested,c:"var(--pink)"},
+  ];
+
+  const maxCalls=Math.max(1,...stats.map(s=>s.total_calls||0));
+
+  return (
+    <div className="grid" style={{gap:16}}>
+      <div className="row" style={{justifyContent:"space-between"}}>
+        <div style={{fontSize:20,fontWeight:800}}>{t.dashboard}</div>
+        <button className="btn-ghost" onClick={load}>↻ {t.refresh}</button>
+      </div>
+      <div className="grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))"}}>
+        {cards.map((c,i)=>(
+          <div key={i} className="card stat">
+            <div className="num" style={{color:c.c}}>{c.n}</div>
+            <div className="lbl">{c.l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{padding:20}}>
+        <div style={{fontWeight:700,marginBottom:16}}>{t.perAgent}</div>
+        {stats.length===0? <div style={{color:"var(--muted)"}}>{t.noData}</div> :
+          <div className="grid" style={{gap:14}}>
+          {stats.sort((a,b)=>b.total_calls-a.total_calls).map(s=>(
+            <div key={s.agent_id}>
+              <div className="row" style={{justifyContent:"space-between",marginBottom:6}}>
+                <span style={{fontWeight:600}}>{s.full_name}</span>
+                <span style={{color:"var(--muted)",fontSize:13}}>
+                  {s.total_calls} {t.totalCalls.toLowerCase()} · {s.calls_today} {t.callsToday.toLowerCase()}</span>
+              </div>
+              <div style={{height:26,background:"var(--panel2)",borderRadius:7,overflow:"hidden",display:"flex"}}>
+                {OUTCOME_KEYS.map(k=>{
+                  const v=s[k]||0; if(!v) return null;
+                  const pct=v/Math.max(1,s.total_calls)*100;
+                  return <div key={k} title={t.outcomes[k]+": "+v}
+                    style={{width:pct+"%",background:OUTCOME_COLORS[k]}}></div>;
+                })}
+              </div>
+            </div>
+          ))}
+          </div>}
+        <div className="row" style={{gap:14,marginTop:16,flexWrap:"wrap"}}>
+          {OUTCOME_KEYS.map(k=>(
+            <span key={k} className="row" style={{gap:6,fontSize:12,color:"var(--muted)"}}>
+              <span style={{width:11,height:11,borderRadius:3,background:OUTCOME_COLORS[k]}}></span>
+              {t.outcomes[k]}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== ADMIN: ASSIGN ==================== */
+function AdminAssign({t,showToast}){
+  const [agents,setAgents]=useState([]);
+  const [agentId,setAgentId]=useState("");
+  const [count,setCount]=useState(50);
+  const [city,setCity]=useState("");
+  const [onlyNew,setOnlyNew]=useState(true);
+  const [cities,setCities]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [avail,setAvail]=useState(null);
+
+  useEffect(()=>{(async()=>{
+    const {data:ag}=await sb.from("profiles").select("*").eq("role","agent").eq("active",true);
+    setAgents(ag||[]);
+    const {data:cl}=await sb.from("clients").select("city");
+    setCities([...new Set((cl||[]).map(c=>c.city).filter(Boolean))].sort());
+  })();},[]);
+
+  const checkAvail=useCallback(async()=>{
+    let query=sb.from("clients").select("id",{count:"exact",head:true})
+      .is("assigned_to",null).eq("do_not_call",false);
+    if(onlyNew) query=query.eq("status","new");
+    if(city) query=query.eq("city",city);
+    const {count:c}=await query;
+    setAvail(c||0);
+  },[city,onlyNew]);
+  useEffect(()=>{checkAvail();},[checkAvail]);
+
+  async function assign(){
+    if(!agentId){ showToast(t.selectAgent,true); return; }
+    setBusy(true);
+    let query=sb.from("clients").select("id").is("assigned_to",null).eq("do_not_call",false);
+    if(onlyNew) query=query.eq("status","new");
+    if(city) query=query.eq("city",city);
+    query=query.limit(count);
+    const {data:rows,error}=await query;
+    if(error){ setBusy(false); showToast(error.message,true); return; }
+    const ids=(rows||[]).map(r=>r.id);
+    if(ids.length===0){ setBusy(false); showToast(t.noData,true); return; }
+    const {error:e2}=await sb.from("clients").update({assigned_to:agentId}).in("id",ids);
+    setBusy(false);
+    if(e2){ showToast(e2.message,true); return; }
+    const a=agents.find(x=>x.id===agentId);
+    showToast(t.assigned.replace("{n}",ids.length).replace("{a}",a?.full_name||""));
+    checkAvail();
+  }
+
+  return (
+    <div className="grid" style={{gap:16,maxWidth:560}}>
+      <div style={{fontSize:20,fontWeight:800}}>{t.assignClients}</div>
+      <div className="card" style={{padding:22}}>
+        <label className="fld"><span>{t.selectAgent}</span>
+          <select value={agentId} onChange={e=>setAgentId(e.target.value)}>
+            <option value="">—</option>
+            {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
+          </select></label>
+        <label className="fld"><span>{t.byCity}</span>
+          <select value={city} onChange={e=>setCity(e.target.value)}>
+            <option value="">{t.allCities}</option>
+            {cities.map(c=><option key={c} value={c}>{c}</option>)}
+          </select></label>
+        <label className="fld"><span>{t.howMany}</span>
+          <input type="number" min="1" max="1000" value={count}
+            onChange={e=>setCount(Math.max(1,parseInt(e.target.value)||1))}/></label>
+        <label className="row" style={{gap:9,marginBottom:18,cursor:"pointer"}}>
+          <input type="checkbox" style={{width:"auto"}} checked={onlyNew}
+            onChange={e=>setOnlyNew(e.target.checked)}/>
+          <span style={{color:"var(--muted)",fontSize:14}}>{t.onlyNew}</span></label>
+        <div style={{fontSize:13,color:"var(--muted)",marginBottom:14}}>
+          {avail===null?"…":avail} {t.unassigned.toLowerCase()} · {t.remaining}</div>
+        <button className="btn-primary" style={{width:"100%"}} disabled={busy} onClick={assign}>
+          {busy?t.saving:t.assignNow}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== ADMIN: REPORTS / CALLBACKS ==================== */
+function AdminReports({t,showToast}){
+  const [logs,setLogs]=useState(null);
+  const [callbacks,setCallbacks]=useState([]);
+  useEffect(()=>{(async()=>{
+    const {data}=await sb.from("call_logs")
+      .select("*, profiles(full_name), clients(name,phone,city)")
+      .order("created_at",{ascending:false}).limit(500);
+    setLogs(data||[]);
+    const today=new Date(); today.setHours(23,59,59,999);
+    const {data:cb}=await sb.from("call_logs")
+      .select("*, clients(name,phone,city)")
+      .not("callback_at","is",null).lte("callback_at",today.toISOString())
+      .order("callback_at",{ascending:true});
+    setCallbacks(cb||[]);
+  })();},[]);
+
+  function exportCsv(){
+    const rows=[["Date","Agent","Client","Phone","City","Outcome","Feedback"]];
+    (logs||[]).forEach(l=>rows.push([
+      new Date(l.created_at).toLocaleString(),
+      l.profiles?.full_name||"", l.clients?.name||"", l.clients?.phone||"",
+      l.clients?.city||"", l.outcome, (l.feedback||"").replace(/\n/g," ")
+    ]));
+    const csv="\uFEFF"+rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download="call_report.csv"; a.click();
+    showToast(t.exportCsv+" ✓");
+  }
+
+  if(logs===null) return <div className="spin"></div>;
+  return (
+    <div className="grid" style={{gap:16}}>
+      <div className="row" style={{justifyContent:"space-between"}}>
+        <div style={{fontSize:20,fontWeight:800}}>{t.reports}</div>
+        <button className="btn-primary" onClick={exportCsv}>⬇ {t.exportCsv}</button>
+      </div>
+
+      <div className="card" style={{padding:0,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",fontWeight:700,borderBottom:"1px solid var(--line)"}}>
+          ⏰ {t.callbacksToday} · {callbacks.length}</div>
+        {callbacks.length===0? <div style={{padding:22,color:"var(--muted)"}}>{t.noCallbacks}</div> :
+          <table><tbody>
+            {callbacks.map(c=>(
+              <tr key={c.id}>
+                <td style={{fontWeight:600}}>{c.clients?.name||"—"}</td>
+                <td><a href={"tel:"+c.clients?.phone} style={{textDecoration:"none"}}>{c.clients?.phone}</a></td>
+                <td style={{color:"var(--muted)"}}>{c.clients?.city}</td>
+                <td style={{color:"var(--amber)"}}>{fmtDate(c.callback_at,t.dir)}</td>
+              </tr>
+            ))}
+          </tbody></table>}
+      </div>
+
+      <div className="card" style={{overflow:"auto"}}>
+        <div style={{padding:"14px 18px",fontWeight:700,borderBottom:"1px solid var(--line)"}}>{t.callHistory}</div>
+        <table>
+          <thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th>
+            <th>{t.outcome}</th><th>{t.agentName}</th><th>{t.feedback}</th><th>{t.history}</th></tr></thead>
+          <tbody>
+          {logs.map(l=>(
+            <tr key={l.id}>
+              <td style={{fontWeight:600}}>{l.clients?.name||"—"}</td>
+              <td>{l.clients?.phone}</td>
+              <td style={{color:"var(--muted)"}}>{l.clients?.city}</td>
+              <td><Pill outcome={l.outcome} t={t}/></td>
+              <td style={{color:"var(--muted)"}}>{l.profiles?.full_name}</td>
+              <td style={{maxWidth:220,color:"var(--muted)",fontSize:13}}>{l.feedback||"—"}</td>
+              <td style={{color:"var(--muted)",fontSize:12,whiteSpace:"nowrap"}}>{fmtDate(l.created_at,t.dir)}</td>
+            </tr>
+          ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+/* ==================== ROOT APP ==================== */
+function App(){
+  const [lang,setLang]=useState("ar");
+  const [session,setSession]=useState(undefined); // undefined=loading
+  const [me,setMe]=useState(null);
+  const [tab,setTab]=useState("dashboard");
+  const [toastNode,showToast]=useToast();
+  const t=T[lang];
+
+  useEffect(()=>{
+    document.body.dir=t.dir; document.documentElement.lang=lang;
+  },[lang]);
+
+  const loadMe=useCallback(async(uid)=>{
+    const {data}=await sb.from("profiles").select("*").eq("id",uid).single();
+    setMe(data);
+    setTab(data?.role==="admin"?"dashboard":"mycalls");
+  },[]);
+
+  useEffect(()=>{
+    sb.auth.getSession().then(({data})=>{
+      setSession(data.session);
+      if(data.session) loadMe(data.session.user.id);
+    });
+    const {data:sub}=sb.auth.onAuthStateChange((_e,s)=>{
+      setSession(s);
+      if(s) loadMe(s.user.id); else setMe(null);
+    });
+    return ()=>sub.subscription.unsubscribe();
+  },[loadMe]);
+
+  async function logout(){ await sb.auth.signOut(); setMe(null); }
+
+  if(session===undefined) return <div className="spin"></div>;
+  if(!session) return <Login lang={lang} setLang={setLang} onLogin={()=>{}}/>;
+  if(!me) return <div className="spin"></div>;
+
+  const adminTabs=[["dashboard",t.dashboard],["assign",t.assign],["reports",t.reports]];
+
+  return (
+    <div>
+      <Header t={t} lang={lang} setLang={setLang} me={me} onLogout={logout}/>
+      <div style={{maxWidth:1180,margin:"0 auto",padding:"20px 18px 60px"}}>
+        {me.role==="admin" && (
+          <div className="tabbar" style={{marginBottom:20,maxWidth:460}}>
+            {adminTabs.map(([k,l])=>(
+              <button key={k} className={tab===k?"active":""} onClick={()=>setTab(k)}>{l}</button>
+            ))}
+          </div>
+        )}
+        {me.role==="admin"? (
+          tab==="dashboard"? <AdminDashboard t={t}/> :
+          tab==="assign"? <AdminAssign t={t} showToast={showToast}/> :
+          <AdminReports t={t} showToast={showToast}/>
+        ) : (
+          <AgentView t={t} me={me} showToast={showToast}/>
+        )}
+      </div>
+      {toastNode}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
