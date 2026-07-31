@@ -132,6 +132,10 @@ const T = {
     reportFor:"Report for", on:"on", progress:"Progress", summary:"Summary",
     today:"Today", generated:"Generated", agentReport:"Agent report",
     of:"of", called2:"called",
+    editClient:"Edit client", edit:"Edit", saveChanges:"Save changes",
+    confirmed:"Confirmed", confirmedData:"Confirmed / clean data",
+    reachedBy:"Reached by", reachedAt:"Reached at", noConfirmed:"No confirmed clients yet.",
+    editedOk:"Client updated", confirmedCount:"Confirmed clients",
   },
   ar: {
     dir:"rtl", appName:"مركز الاتصال", tagline:"إعادة التواصل مع العملاء",
@@ -172,6 +176,10 @@ const T = {
     reportFor:"تقرير", on:"بتاريخ", progress:"التقدم", summary:"ملخص",
     today:"اليوم", generated:"صدر في", agentReport:"تقرير الموظف",
     of:"من", called2:"تم الاتصال",
+    editClient:"تعديل العميل", edit:"تعديل", saveChanges:"حفظ التعديلات",
+    confirmed:"مؤكد", confirmedData:"البيانات المؤكدة / النظيفة",
+    reachedBy:"تم التواصل بواسطة", reachedAt:"وقت التواصل", noConfirmed:"لا يوجد عملاء مؤكدون بعد.",
+    editedOk:"تم تحديث العميل", confirmedCount:"العملاء المؤكدون",
   }
 };
 
@@ -351,10 +359,49 @@ function HistoryModal({t,client,onClose}){
 }
 
 /* ==================== AGENT VIEW ==================== */
+/* ==================== EDIT CLIENT MODAL ==================== */
+function EditClientModal({t,client,onClose,onSaved,showToast}){
+  const [name,setName]=useState(client.name||"");
+  const [city,setCity]=useState(client.city||"");
+  const [location,setLocation]=useState(client.location||"");
+  const [busy,setBusy]=useState(false);
+  async function save(){
+    setBusy(true);
+    const {error}=await sb.from("clients")
+      .update({name:name.trim(),city:city.trim(),location:location.trim()})
+      .eq("id",client.id);
+    setBusy(false);
+    if(error){ showToast(error.message,true); return; }
+    onSaved();
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="card" style={{width:440,maxWidth:"100%",padding:26}} onClick={e=>e.stopPropagation()}>
+        <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:800}}>{t.editClient}</h2>
+        <div className="row" style={{gap:8,marginBottom:16}}>
+          <span className="pill" style={{background:"var(--brand)22",color:"var(--brand)"}}>📞 {client.phone}</span>
+        </div>
+        <label className="fld"><span>{t.name}</span>
+          <input value={name} onChange={e=>setName(e.target.value)} autoFocus/></label>
+        <label className="fld"><span>{t.city}</span>
+          <input value={city} onChange={e=>setCity(e.target.value)}/></label>
+        <label className="fld"><span>{t.location}</span>
+          <textarea rows="2" value={location} onChange={e=>setLocation(e.target.value)}></textarea></label>
+        <div className="row" style={{justifyContent:"flex-end",gap:10}}>
+          <button className="btn-ghost" onClick={onClose}>{t.cancel}</button>
+          <button className="btn-primary" disabled={busy} onClick={save}>{busy?t.saving:t.saveChanges}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== AGENT VIEW ==================== */
 function AgentView({t,me,showToast}){
   const [clients,setClients]=useState(null);
   const [q,setQ]=useState(""); const [cityF,setCityF]=useState(""); const [statF,setStatF]=useState("");
   const [logFor,setLogFor]=useState(null); const [histFor,setHistFor]=useState(null);
+  const [editFor,setEditFor]=useState(null);
 
   const load=useCallback(async()=>{
     const {data}=await sb.from("clients").select("*")
@@ -415,6 +462,8 @@ function AgentView({t,me,showToast}){
               <td><Pill outcome={c.status} t={t}/></td>
               <td style={{textAlign:"end",whiteSpace:"nowrap"}}>
                 <button className="btn-ghost" style={{padding:"6px 10px",marginInlineEnd:6}}
+                  onClick={()=>setEditFor(c)} title={t.edit}>✏️</button>
+                <button className="btn-ghost" style={{padding:"6px 10px",marginInlineEnd:6}}
                   onClick={()=>setHistFor(c)}>🕘</button>
                 <button className="btn-primary" style={{padding:"6px 14px"}}
                   onClick={()=>setLogFor(c)}>{t.logCall}</button>
@@ -429,6 +478,9 @@ function AgentView({t,me,showToast}){
         onClose={()=>setLogFor(null)}
         onSaved={()=>{setLogFor(null); showToast(t.save+" ✓"); load();}} showToast={showToast}/>}
       {histFor && <HistoryModal t={t} client={histFor} onClose={()=>setHistFor(null)}/>}
+      {editFor && <EditClientModal t={t} client={editFor}
+        onClose={()=>setEditFor(null)}
+        onSaved={()=>{setEditFor(null); showToast(t.editedOk+" ✓"); load();}} showToast={showToast}/>}
     </div>
   );
 }
@@ -826,6 +878,82 @@ function AdminReports({t,showToast}){
     </div>
   );
 }
+/* ==================== ADMIN: CONFIRMED / CLEAN DATA ==================== */
+function AdminConfirmed({t,showToast}){
+  const [rows,setRows]=useState(null);
+  const [q,setQ]=useState(""); const [cityF,setCityF]=useState("");
+  const load=useCallback(async()=>{
+    const {data}=await sb.from("confirmed_clients").select("*").order("reached_at",{ascending:false});
+    setRows(data||[]);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const cities=useMemo(()=>[...new Set((rows||[]).map(r=>r.city).filter(Boolean))].sort(),[rows]);
+  const filtered=useMemo(()=>(rows||[]).filter(r=>{
+    if(cityF && r.city!==cityF) return false;
+    if(q){ const s=(r.name||"")+" "+(r.phone||""); if(!s.toLowerCase().includes(q.toLowerCase())) return false; }
+    return true;
+  }),[rows,q,cityF]);
+
+  function exportCsv(){
+    const head=[["Name","Phone","City","Location","Outcome","Reached by","Reached at"]];
+    filtered.forEach(r=>head.push([r.name||"",r.phone||"",r.city||"",(r.location||"").replace(/\n/g," "),
+      t.outcomes[r.status],r.agent_name||"",new Date(r.reached_at).toLocaleString()]));
+    const csv="\uFEFF"+head.map(x=>x.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download="confirmed_clients.csv"; a.click();
+    showToast(t.exportCsv+" ✓");
+  }
+
+  if(rows===null) return <div className="spin"></div>;
+  return (
+    <div className="grid" style={{gap:16}}>
+      <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:800}}>✅ {t.confirmedData}</div>
+          <div style={{color:"var(--muted)",fontSize:13}}>{rows.length} {t.confirmedCount.toLowerCase()}</div>
+        </div>
+        <div className="row" style={{gap:8}}>
+          <button className="btn-ghost" onClick={load}>↻ {t.refresh}</button>
+          <button className="btn-primary" onClick={exportCsv}>⬇ {t.exportCsv}</button>
+        </div>
+      </div>
+
+      <div className="card" style={{padding:14}}>
+        <div className="grid" style={{gridTemplateColumns:"2fr 1fr",gap:10}}>
+          <input placeholder={t.search} value={q} onChange={e=>setQ(e.target.value)}/>
+          <select value={cityF} onChange={e=>setCityF(e.target.value)}>
+            <option value="">{t.allCities}</option>
+            {cities.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="card" style={{overflow:"auto"}}>
+        {filtered.length===0? <div style={{padding:40,textAlign:"center",color:"var(--muted)"}}>{t.noConfirmed}</div> :
+        <table>
+          <thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th>
+            <th>{t.location}</th><th>{t.outcome}</th><th>{t.reachedBy}</th><th>{t.reachedAt}</th></tr></thead>
+          <tbody>
+          {filtered.map(r=>(
+            <tr key={r.id}>
+              <td style={{fontWeight:600}}>{r.name||"—"}</td>
+              <td>{r.phone}</td>
+              <td style={{color:"var(--muted)"}}>{r.city||"—"}</td>
+              <td style={{maxWidth:240,color:"var(--muted)",fontSize:13}}>{r.location||"—"}</td>
+              <td><Pill outcome={r.status} t={t}/></td>
+              <td style={{color:"var(--muted)"}}>{r.agent_name}</td>
+              <td style={{color:"var(--muted)",fontSize:12,whiteSpace:"nowrap"}}>{fmtDate(r.reached_at,t.dir)}</td>
+            </tr>
+          ))}
+          </tbody>
+        </table>}
+      </div>
+    </div>
+  );
+}
+
 /* ==================== ROOT APP ==================== */
 function App(){
   const [lang,setLang]=useState("ar");
@@ -863,14 +991,14 @@ function App(){
   if(!session) return <Login lang={lang} setLang={setLang} onLogin={()=>{}}/>;
   if(!me) return <div className="spin"></div>;
 
-  const adminTabs=[["dashboard",t.dashboard],["assign",t.assign],["reports",t.reports]];
+  const adminTabs=[["dashboard",t.dashboard],["assign",t.assign],["reports",t.reports],["confirmed",t.confirmed]];
 
   return (
     <div>
       <Header t={t} lang={lang} setLang={setLang} me={me} onLogout={logout}/>
       <div style={{maxWidth:1180,margin:"0 auto",padding:"20px 18px 60px"}}>
         {me.role==="admin" && (
-          <div className="tabbar" style={{marginBottom:20,maxWidth:460}}>
+          <div className="tabbar" style={{marginBottom:20,maxWidth:600}}>
             {adminTabs.map(([k,l])=>(
               <button key={k} className={tab===k?"active":""} onClick={()=>setTab(k)}>{l}</button>
             ))}
@@ -879,6 +1007,7 @@ function App(){
         {me.role==="admin"? (
           tab==="dashboard"? <AdminDashboard t={t}/> :
           tab==="assign"? <AdminAssign t={t} showToast={showToast}/> :
+          tab==="confirmed"? <AdminConfirmed t={t} showToast={showToast}/> :
           <AdminReports t={t} showToast={showToast}/>
         ) : (
           <AgentView t={t} me={me} showToast={showToast}/>
