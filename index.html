@@ -152,6 +152,12 @@ const T = {
     deleted:"Client deleted", viewHistory:"History", totalShown:"shown",
     edit2:"Edit", noCustomers:"No customers match your search.",
     assignedAgent:"Assigned agent", loadMore:"Load more", saveEdit:"Save",
+    step1:"1 · Confirm data", step2:"2 · Call activity",
+    dataCorrect:"✓ Data is correct", dataConfirmed:"Data confirmed",
+    confirmSaved:"Data confirmed & saved", saveActivity:"Save call activity",
+    activitySaved:"Call activity saved", waSent:"WhatsApp", waSentAt:"WhatsApp sent",
+    waBy:"Sent by", notConfirmed:"Not confirmed", confirmFirst:"Review & confirm the client's details, then log the call.",
+    alreadyConfirmed:"Confirmed", sendWhatsapp:"Send WhatsApp",
   },
   ar: {
     dir:"rtl", appName:"مركز الاتصال", tagline:"إعادة التواصل مع العملاء",
@@ -212,6 +218,12 @@ const T = {
     deleted:"تم حذف العميل", viewHistory:"السجل", totalShown:"معروض",
     edit2:"تعديل", noCustomers:"لا يوجد عملاء مطابقون لبحثك.",
     assignedAgent:"الموظف المسند", loadMore:"عرض المزيد", saveEdit:"حفظ",
+    step1:"١ · تأكيد البيانات", step2:"٢ · نشاط المكالمة",
+    dataCorrect:"✓ البيانات صحيحة", dataConfirmed:"تم تأكيد البيانات",
+    confirmSaved:"تم تأكيد البيانات وحفظها", saveActivity:"حفظ نشاط المكالمة",
+    activitySaved:"تم حفظ نشاط المكالمة", waSent:"واتساب", waSentAt:"تم إرسال واتساب",
+    waBy:"أرسله", notConfirmed:"غير مؤكد", confirmFirst:"راجع وأكّد بيانات العميل، ثم سجّل المكالمة.",
+    alreadyConfirmed:"مؤكد", sendWhatsapp:"إرسال واتساب",
   }
 };
 
@@ -412,91 +424,108 @@ function Header({t,lang,setLang,me,onLogout}){
     </div>
   );
 }
-/* ==================== LOG CALL MODAL (with inline edit) ==================== */
-const EDITABLE_STATUSES = ["new","no_answer","wrong_number"];
+/* ==================== LOG CALL MODAL (two-step) ==================== */
 function LogCallModal({t,client,me,onClose,onSaved,showToast}){
+  // step 2 (activity)
   const [outcome,setOutcome]=useState("");
   const [feedback,setFeedback]=useState("");
   const [cbAt,setCbAt]=useState("");
-  const [busy,setBusy]=useState(false);
-  // editable client fields
+  const [busyAct,setBusyAct]=useState(false);
+  // step 1 (data)
   const [name,setName]=useState(client.name||"");
   const [city,setCity]=useState(client.city||"");
   const [location,setLocation]=useState(client.location||"");
+  const [busyConf,setBusyConf]=useState(false);
+  const [confirmed,setConfirmed]=useState(!!client.confirmed);
 
-  const isAdmin = me.role==="admin";
-  const canEdit = isAdmin || EDITABLE_STATUSES.includes(client.status);
   const changed = name!==(client.name||"") || city!==(client.city||"") || location!==(client.location||"");
 
-  async function save(){
-    if(!outcome){ showToast(t.pickOutcome,true); return; }
-    setBusy(true);
-    // 1. If the agent changed client info, save it first — but only if allowed.
-    if(changed){
-      if(!canEdit){ setBusy(false); showToast(t.editLocked,true); return; }
-      const {error:eUp}=await sb.from("clients")
-        .update({name:name.trim(),city:city.trim(),location:location.trim()})
-        .eq("id",client.id);
-      if(eUp){ setBusy(false); showToast(eUp.message,true); return; }
-    }
-    // 2. Insert the call log (this also updates status via trigger).
-    const row={client_id:client.id, agent_id:me.id, outcome, feedback:feedback||null,
-      callback_at: (outcome==="call_back" && cbAt)? new Date(cbAt).toISOString(): null};
-    const {error}=await sb.from("call_logs").insert(row);
-    setBusy(false);
+  // Log a WhatsApp click, then open WhatsApp
+  async function openWhatsApp(){
+    sb.from("whatsapp_log").insert({client_id:client.id, agent_id:me.id}).then(()=>{});
+    window.open(waLink({...client,name}), "_blank");
+  }
+
+  // STEP 1 — save edits (if any) and mark data confirmed
+  async function confirmData(){
+    setBusyConf(true);
+    const {error}=await sb.from("clients").update({
+      name:name.trim(), city:city.trim(), location:location.trim(),
+      confirmed:true, confirmed_by:me.id, confirmed_at:new Date().toISOString()
+    }).eq("id",client.id);
+    setBusyConf(false);
     if(error){ showToast(error.message,true); return; }
+    setConfirmed(true);
+    showToast(t.confirmSaved+" ✓");
+    onSaved({soft:true}); // refresh list but keep modal open
+  }
+
+  // STEP 2 — save call activity
+  async function saveActivity(){
+    if(!outcome){ showToast(t.pickOutcome,true); return; }
+    setBusyAct(true);
+    const row={client_id:client.id, agent_id:me.id, outcome, feedback:feedback||null,
+      callback_at:(outcome==="call_back" && cbAt)? new Date(cbAt).toISOString(): null};
+    const {error}=await sb.from("call_logs").insert(row);
+    setBusyAct(false);
+    if(error){ showToast(error.message,true); return; }
+    showToast(t.activitySaved+" ✓");
     onSaved();
   }
+
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="card" style={{width:480,maxWidth:"100%",padding:26,maxHeight:"88vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontSize:12,color:"var(--muted)",fontWeight:600}}>{t.markResult}</div>
-        <h2 style={{margin:"3px 0 4px",fontSize:21,fontWeight:800}}>{client.name||"—"}</h2>
-        <div className="row" style={{gap:8,marginBottom:18,flexWrap:"wrap"}}>
+      <div className="card" style={{width:500,maxWidth:"100%",padding:26,maxHeight:"90vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
+        <h2 style={{margin:"0 0 4px",fontSize:21,fontWeight:800}}>{name||"—"}</h2>
+        <div className="row" style={{gap:8,marginBottom:8,flexWrap:"wrap"}}>
           <a href={"tel:"+client.phone} className="pill" style={{background:"var(--brand)22",color:"var(--brand)",fontSize:14,textDecoration:"none"}}>
             📞 {client.phone}</a>
-          <a href={waLink(client)} target="_blank" rel="noopener" className="pill"
-            style={{background:"#25D36622",color:"#25D366",fontSize:14,textDecoration:"none"}}>
-            💬 WhatsApp</a>
+          <button className="pill" onClick={openWhatsApp}
+            style={{background:"#25D36622",color:"#25D366",fontSize:14,border:"none",cursor:"pointer"}}>
+            💬 {t.sendWhatsapp}</button>
+          {confirmed && <span className="pill" style={{background:"var(--green)22",color:"var(--green)",fontSize:12}}>✓ {t.alreadyConfirmed}</span>}
         </div>
+        <div style={{fontSize:12.5,color:"var(--muted)",marginBottom:18}}>{t.confirmFirst}</div>
 
-        {/* ---- editable client info ---- */}
-        <div style={{border:"1px solid var(--line)",borderRadius:12,padding:14,marginBottom:16}}>
-          <div className="row" style={{justifyContent:"space-between",marginBottom:10}}>
-            <span style={{fontSize:12,fontWeight:700,color:"var(--muted)"}}>{t.editClient}</span>
-            {!canEdit && <span className="pill" style={{background:"var(--slate)22",color:"var(--slate)",fontSize:11}}>🔒</span>}
-          </div>
+        {/* ===== STEP 1: CONFIRM DATA ===== */}
+        <div style={{border:"1px solid "+(confirmed?"var(--green)":"var(--line)"),borderRadius:12,padding:16,marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:800,color:confirmed?"var(--green)":"var(--brand)",marginBottom:12}}>{t.step1}</div>
           <label className="fld" style={{marginBottom:10}}><span>{t.name}</span>
-            <input value={name} disabled={!canEdit} onChange={e=>setName(e.target.value)}
-              style={!canEdit?{opacity:.6,cursor:"not-allowed"}:{}}/></label>
+            <input value={name} onChange={e=>{setName(e.target.value);setConfirmed(false);}}/></label>
           <label className="fld" style={{marginBottom:10}}><span>{t.city}</span>
-            <input value={city} disabled={!canEdit} onChange={e=>setCity(e.target.value)}
-              style={!canEdit?{opacity:.6,cursor:"not-allowed"}:{}}/></label>
-          <label className="fld" style={{marginBottom:0}}><span>{t.location}</span>
-            <textarea rows="2" value={location} disabled={!canEdit} onChange={e=>setLocation(e.target.value)}
-              style={!canEdit?{opacity:.6,cursor:"not-allowed"}:{}}></textarea></label>
-          {!canEdit && <div style={{fontSize:11.5,color:"var(--muted)",marginTop:8}}>{t.editLocked}</div>}
+            <input value={city} onChange={e=>{setCity(e.target.value);setConfirmed(false);}}/></label>
+          <label className="fld" style={{marginBottom:12}}><span>{t.location}</span>
+            <textarea rows="2" value={location} onChange={e=>{setLocation(e.target.value);setConfirmed(false);}}></textarea></label>
+          <button className="btn-primary" style={{width:"100%",background:confirmed?"var(--green)":"var(--brand)"}}
+            disabled={busyConf} onClick={confirmData}>
+            {busyConf?t.saving:(confirmed && !changed? t.dataConfirmed : t.dataCorrect)}</button>
         </div>
 
-        <label className="fld"><span>{t.outcome}</span>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {OUTCOME_KEYS.map(k=>{
-              const on=outcome===k, c=OUTCOME_COLORS[k];
-              return <button key={k} onClick={()=>setOutcome(k)}
-                style={{padding:"10px",textAlign:"start",background:on?c+"22":"var(--panel2)",
-                  color:on?c:"var(--ink)",border:"1px solid "+(on?c:"var(--line)"),borderRadius:9,fontSize:13}}>
-                {t.outcomes[k]}</button>;
-            })}
-          </div>
-        </label>
-        {outcome==="call_back" &&
-          <label className="fld"><span>{t.callbackTime}</span>
-            <input type="datetime-local" value={cbAt} onChange={e=>setCbAt(e.target.value)}/></label>}
-        <label className="fld"><span>{t.feedback}</span>
-          <textarea rows="3" value={feedback} onChange={e=>setFeedback(e.target.value)}></textarea></label>
-        <div className="row" style={{justifyContent:"flex-end",gap:10,marginTop:6}}>
+        {/* ===== STEP 2: CALL ACTIVITY ===== */}
+        <div style={{border:"1px solid var(--line)",borderRadius:12,padding:16}}>
+          <div style={{fontSize:13,fontWeight:800,color:"var(--violet)",marginBottom:12}}>{t.step2}</div>
+          <label className="fld"><span>{t.outcome}</span>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {OUTCOME_KEYS.map(k=>{
+                const on=outcome===k, c=OUTCOME_COLORS[k];
+                return <button key={k} onClick={()=>setOutcome(k)}
+                  style={{padding:"10px",textAlign:"start",background:on?c+"22":"var(--panel2)",
+                    color:on?c:"var(--ink)",border:"1px solid "+(on?c:"var(--line)"),borderRadius:9,fontSize:13}}>
+                  {t.outcomes[k]}</button>;
+              })}
+            </div>
+          </label>
+          {outcome==="call_back" &&
+            <label className="fld"><span>{t.callbackTime}</span>
+              <input type="datetime-local" value={cbAt} onChange={e=>setCbAt(e.target.value)}/></label>}
+          <label className="fld"><span>{t.feedback}</span>
+            <textarea rows="3" value={feedback} onChange={e=>setFeedback(e.target.value)}></textarea></label>
+          <button className="btn-primary" style={{width:"100%"}} disabled={busyAct} onClick={saveActivity}>
+            {busyAct?t.saving:t.saveActivity}</button>
+        </div>
+
+        <div className="row" style={{justifyContent:"flex-end",gap:10,marginTop:16}}>
           <button className="btn-ghost" onClick={onClose}>{t.cancel}</button>
-          <button className="btn-primary" disabled={busy} onClick={save}>{busy?t.saving:t.save}</button>
         </div>
       </div>
     </div>
@@ -603,10 +632,10 @@ function AgentView({t,me,showToast}){
               <td style={{color:"var(--muted)"}}>{c.city||"—"}</td>
               <td><Pill outcome={c.status} t={t}/></td>
               <td style={{textAlign:"end",whiteSpace:"nowrap"}}>
-                <a href={waLink(c)} target="_blank" rel="noopener"
-                  className="btn-ghost" style={{padding:"6px 10px",marginInlineEnd:6,
-                    textDecoration:"none",display:"inline-block",color:"#25D366",borderColor:"#25D36655"}}
-                  title="WhatsApp">💬</a>
+                <button className="btn-ghost" style={{padding:"6px 10px",marginInlineEnd:6,
+                    color:"#25D366",borderColor:"#25D36655"}}
+                  onClick={()=>{ sb.from("whatsapp_log").insert({client_id:c.id,agent_id:me.id}).then(()=>{}); window.open(waLink(c),"_blank"); }}
+                  title="WhatsApp">💬</button>
                 <button className="btn-ghost" style={{padding:"6px 10px",marginInlineEnd:6}}
                   onClick={()=>setHistFor(c)}>🕘</button>
                 <button className="btn-primary" style={{padding:"6px 14px"}}
@@ -620,7 +649,7 @@ function AgentView({t,me,showToast}){
 
       {logFor && <LogCallModal t={t} client={logFor} me={me}
         onClose={()=>setLogFor(null)}
-        onSaved={()=>{setLogFor(null); showToast(t.save+" ✓"); load();}} showToast={showToast}/>}
+        onSaved={(opt)=>{ if(opt&&opt.soft){ load(); } else { setLogFor(null); load(); } }} showToast={showToast}/>}
       {histFor && <HistoryModal t={t} client={histFor} onClose={()=>setHistFor(null)}/>}
     </div>
   );
@@ -1277,13 +1306,21 @@ function AdminCustomers({t,showToast}){
     return query;
   },[q,cityF,statF,agentF]);
 
+  async function attachWa(list){
+    if(!list||list.length===0) return list;
+    const ids=list.map(c=>c.id);
+    const {data:wa}=await sb.from("whatsapp_last").select("*").in("client_id",ids);
+    const m={}; (wa||[]).forEach(w=>m[w.client_id]=w);
+    return list.map(c=>({...c, wa:m[c.id]||null}));
+  }
   const load=useCallback(async(reset)=>{
     setLoading(true);
     const p=reset?0:page;
     const {data}=await buildQuery(false)
       .order("id",{ascending:true}).range(p*PAGE,(p+1)*PAGE-1);
-    if(reset){ setRows(data||[]); setPage(1); }
-    else { setRows(prev=>[...prev,...(data||[])]); setPage(p+1); }
+    const withWa=await attachWa(data||[]);
+    if(reset){ setRows(withWa); setPage(1); }
+    else { setRows(prev=>[...prev,...withWa]); setPage(p+1); }
     const {count}=await buildQuery(true);
     setTotal(count||0);
     setLoading(false);
@@ -1328,7 +1365,7 @@ function AdminCustomers({t,showToast}){
         {rows.length===0 && !loading? <div style={{padding:40,textAlign:"center",color:"var(--muted)"}}>{t.noCustomers}</div> :
         <table>
           <thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th>
-            <th>{t.status}</th><th>{t.assignedAgent}</th><th style={{textAlign:"end"}}>{t.actions}</th></tr></thead>
+            <th>{t.status}</th><th>{t.assignedAgent}</th><th>{t.waSent}</th><th>{t.confirmed}</th><th style={{textAlign:"end"}}>{t.actions}</th></tr></thead>
           <tbody>
           {rows.map(c=>(
             <tr key={c.id}>
@@ -1337,6 +1374,13 @@ function AdminCustomers({t,showToast}){
               <td style={{color:"var(--muted)"}}>{c.city||"—"}</td>
               <td><Pill outcome={c.status} t={t}/></td>
               <td style={{color:"var(--muted)"}}>{c.profiles?.full_name||"—"}</td>
+              <td style={{fontSize:12}}>
+                {c.wa? <span title={t.waBy+": "+(c.wa.wa_agent||"")+" · "+fmtDate(c.wa.wa_at,t.dir)}
+                  style={{color:"#25D366"}}>💬 {fmtDate(c.wa.wa_at,t.dir)}</span>
+                  : <span style={{color:"var(--muted)"}}>—</span>}</td>
+              <td>{c.confirmed
+                ? <span className="pill" style={{background:"var(--green)22",color:"var(--green)",fontSize:11}}>✓</span>
+                : <span style={{color:"var(--muted)",fontSize:12}}>—</span>}</td>
               <td style={{textAlign:"end",whiteSpace:"nowrap"}}>
                 <button className="btn-ghost" style={{padding:"5px 9px",marginInlineEnd:5}}
                   onClick={()=>setHistFor(c)} title={t.viewHistory}>🕘</button>
