@@ -63,16 +63,20 @@
   .mini .num{font-size:23px;font-weight:800;line-height:1}
   .mini .lbl{color:var(--muted);font-size:11.5px;margin-top:5px;font-weight:600}
   @media print{
-    @page{margin:14mm}
+    @page{margin:12mm}
     body{background:#fff !important;color:#111 !important}
+    /* hide everything by default */
+    body *{visibility:hidden !important}
+    /* show only the report area and its contents */
+    .print-area, .print-area *{visibility:visible !important}
+    /* pin the report to the top-left of the page */
+    .print-area{position:absolute !important;inset-inline-start:0;top:0;width:100% !important}
     .no-print{display:none !important}
     .card{box-shadow:none !important;border:1px solid #ccc !important;background:#fff !important;
       break-inside:avoid}
     .stat .num,.mini .num{color:#111 !important}
     .lbl,.mini .lbl,th{color:#444 !important}
     table,td,th{border-color:#ccc !important}
-    #root>div>div{max-width:100% !important}
-    .print-area,.print-area *{visibility:visible}
     .pill{border:1px solid #ccc}
   }
 </style>
@@ -948,7 +952,9 @@ function AdminReports({t,showToast}){
                 {callbacksDue[r.agent_id]||0}</td>
               <td className="no-print" style={{textAlign:"end"}}>
                 <button className="btn-ghost" style={{padding:"5px 12px"}}
-                  onClick={()=>setAgentId(r.agent_id)}>{t.dailyReport}</button>
+                  onClick={()=>{ setAgentId(r.agent_id);
+                    setTimeout(()=>{ const el=document.getElementById("report-area");
+                      if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },120); }}>{t.dailyReport}</button>
               </td>
             </tr>);
           })}
@@ -973,7 +979,7 @@ function AdminReports({t,showToast}){
       </div>
 
       {/* ===== THE REPORT (print area) ===== */}
-      <div className="print-area grid" style={{gap:16}}>
+      <div id="report-area" className="print-area grid" style={{gap:16}}>
         <div className="card" style={{padding:"18px 20px"}}>
           <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
             <div>
