@@ -145,6 +145,13 @@ const T = {
     importing:"Importing…", importDone:"Added {a} new, skipped {s} duplicates.",
     nothingToImport:"Nothing to import — check your data.", rowsFound:"rows found",
     clearImport:"Clear",
+    dateFrom:"From", dateTo:"To",
+    customers:"Customers", allCustomers:"All customers", searchCity:"Search city…",
+    allAgents:"All agents", deleteClient:"Delete client",
+    confirmDelete:"Delete this client permanently? This cannot be undone.",
+    deleted:"Client deleted", viewHistory:"History", totalShown:"shown",
+    edit2:"Edit", noCustomers:"No customers match your search.",
+    assignedAgent:"Assigned agent", loadMore:"Load more", saveEdit:"Save",
   },
   ar: {
     dir:"rtl", appName:"مركز الاتصال", tagline:"إعادة التواصل مع العملاء",
@@ -198,6 +205,13 @@ const T = {
     importing:"جارٍ الاستيراد…", importDone:"تمت إضافة {a} عميل جديد، وتخطّي {s} مكرر.",
     nothingToImport:"لا يوجد ما يُستورد — تحقق من البيانات.", rowsFound:"سطر",
     clearImport:"مسح",
+    dateFrom:"من", dateTo:"إلى",
+    customers:"العملاء", allCustomers:"كل العملاء", searchCity:"ابحث عن مدينة…",
+    allAgents:"كل الموظفين", deleteClient:"حذف العميل",
+    confirmDelete:"حذف هذا العميل نهائياً؟ لا يمكن التراجع.",
+    deleted:"تم حذف العميل", viewHistory:"السجل", totalShown:"معروض",
+    edit2:"تعديل", noCustomers:"لا يوجد عملاء مطابقون لبحثك.",
+    assignedAgent:"الموظف المسند", loadMore:"عرض المزيد", saveEdit:"حفظ",
   }
 };
 
@@ -231,6 +245,47 @@ function fmtDate(s,dir){
     {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
 }
 
+/* ---------------- Searchable select (type to filter) ---------------- */
+function SearchableSelect({value,onChange,options,placeholder,allLabel}){
+  const [open,setOpen]=useState(false);
+  const [q,setQ]=useState("");
+  const ref=useRef(null);
+  useEffect(()=>{
+    function onDoc(e){ if(ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown",onDoc);
+    return ()=>document.removeEventListener("mousedown",onDoc);
+  },[]);
+  const filtered=options.filter(o=>o.toLowerCase().includes(q.toLowerCase()));
+  const shown = value || allLabel;
+  return (
+    <div ref={ref} style={{position:"relative"}}>
+      <button type="button" onClick={()=>setOpen(!open)}
+        style={{width:"100%",textAlign:"start",background:"var(--panel2)",color:"var(--ink)",
+          border:"1px solid var(--line)",borderRadius:10,padding:"10px 12px",fontSize:14,fontWeight:400,
+          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{color:value?"var(--ink)":"var(--muted)"}}>{shown}</span>
+        <span style={{color:"var(--muted)",fontSize:11}}>▼</span>
+      </button>
+      {open &&
+        <div style={{position:"absolute",top:"calc(100% + 4px)",insetInlineStart:0,insetInlineEnd:0,
+          background:"var(--panel)",border:"1px solid var(--line)",borderRadius:10,zIndex:30,
+          boxShadow:"var(--shadow)",maxHeight:260,overflow:"auto"}}>
+          <div style={{padding:8,position:"sticky",top:0,background:"var(--panel)"}}>
+            <input autoFocus placeholder={placeholder} value={q} onChange={e=>setQ(e.target.value)}/>
+          </div>
+          <div onClick={()=>{onChange("");setOpen(false);setQ("");}}
+            style={{padding:"9px 14px",cursor:"pointer",color:"var(--muted)",fontSize:13.5}}>{allLabel}</div>
+          {filtered.map(o=>(
+            <div key={o} onClick={()=>{onChange(o);setOpen(false);setQ("");}}
+              style={{padding:"9px 14px",cursor:"pointer",fontSize:13.5,
+                background:value===o?"var(--panel2)":"transparent"}}>{o}</div>
+          ))}
+          {filtered.length===0 && <div style={{padding:"9px 14px",color:"var(--muted)",fontSize:13}}>—</div>}
+        </div>}
+    </div>
+  );
+}
+
 /* ---------------- WhatsApp ---------------- */
 // Convert an Egyptian number to international format for wa.me (20 + number without leading 0)
 function waPhone(raw){
@@ -256,6 +311,46 @@ function waMessage(name){
 }
 function waLink(client){
   return "https://wa.me/"+waPhone(client.phone)+"?text="+encodeURIComponent(waMessage(client.name));
+}
+
+/* ---------------- Searchable select (type to filter) ---------------- */
+function SearchSelect({value,onChange,options,placeholder,allLabel}){
+  const [open,setOpen]=useState(false);
+  const [q,setQ]=useState("");
+  const boxRef=useRef(null);
+  useEffect(()=>{
+    function onDoc(e){ if(boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown",onDoc);
+    return ()=>document.removeEventListener("mousedown",onDoc);
+  },[]);
+  const filtered=options.filter(o=>o.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div ref={boxRef} style={{position:"relative"}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{background:"var(--panel2)",border:"1px solid var(--line)",
+        borderRadius:10,padding:"10px 12px",fontSize:14,cursor:"pointer",display:"flex",
+        justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{color:value?"var(--ink)":"var(--muted)"}}>{value||allLabel}</span>
+        <span style={{color:"var(--muted)",fontSize:12}}>▾</span>
+      </div>
+      {open && (
+        <div style={{position:"absolute",top:"calc(100% + 4px)",insetInlineStart:0,insetInlineEnd:0,
+          background:"var(--panel)",border:"1px solid var(--line)",borderRadius:10,zIndex:20,
+          boxShadow:"var(--shadow)",maxHeight:260,overflow:"auto"}}>
+          <div style={{padding:8,position:"sticky",top:0,background:"var(--panel)"}}>
+            <input autoFocus placeholder={placeholder} value={q} onChange={e=>setQ(e.target.value)}/>
+          </div>
+          <div onClick={()=>{onChange("");setOpen(false);setQ("");}}
+            style={{padding:"9px 14px",cursor:"pointer",color:"var(--muted)",fontSize:14}}>{allLabel}</div>
+          {filtered.map(o=>(
+            <div key={o} onClick={()=>{onChange(o);setOpen(false);setQ("");}}
+              style={{padding:"9px 14px",cursor:"pointer",fontSize:14,
+                background:o===value?"var(--panel2)":"transparent"}}>{o}</div>
+          ))}
+          {filtered.length===0 && <div style={{padding:"9px 14px",color:"var(--muted)",fontSize:13}}>—</div>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ==================== LOGIN ==================== */
@@ -634,8 +729,8 @@ function AdminAssign({t,showToast}){
   useEffect(()=>{(async()=>{
     const {data:ag}=await sb.from("profiles").select("*").eq("role","agent").eq("active",true);
     setAgents(ag||[]);
-    const {data:cl}=await sb.from("clients").select("city");
-    setCities([...new Set((cl||[]).map(c=>c.city).filter(Boolean))].sort());
+    const {data:cl}=await sb.from("distinct_cities").select("city");
+    setCities((cl||[]).map(c=>c.city).filter(Boolean));
   })();},[]);
 
   const checkAvail=useCallback(async()=>{
@@ -677,10 +772,8 @@ function AdminAssign({t,showToast}){
             {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
           </select></label>
         <label className="fld"><span>{t.byCity}</span>
-          <select value={city} onChange={e=>setCity(e.target.value)}>
-            <option value="">{t.allCities}</option>
-            {cities.map(c=><option key={c} value={c}>{c}</option>)}
-          </select></label>
+          <SearchSelect value={city} onChange={setCity} options={cities}
+            placeholder={t.searchCity} allLabel={t.allCities}/></label>
         <label className="fld"><span>{t.howMany}</span>
           <input type="number" min="1" max="1000" value={count}
             onChange={e=>setCount(Math.max(1,parseInt(e.target.value)||1))}/></label>
@@ -722,7 +815,8 @@ function AdminReports({t,showToast}){
   const [team,setTeam]=useState([]);
   const [callbacksDue,setCallbacksDue]=useState({});
   const [agentId,setAgentId]=useState("");
-  const [date,setDate]=useState(()=>new Date().toISOString().slice(0,10));
+  const [dateFrom,setDateFrom]=useState(()=>new Date().toISOString().slice(0,10));
+  const [dateTo,setDateTo]=useState(()=>new Date().toISOString().slice(0,10));
   const [logs,setLogs]=useState([]);
   const [progress,setProgress]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -738,12 +832,15 @@ function AdminReports({t,showToast}){
     if(ag&&ag.length){ setAgentId(ag[0].id); }
   })();},[]);
 
-  // load the selected agent's day report
+  // load the selected agent's report over the chosen date range
   const loadReport=useCallback(async()=>{
     if(!agentId) return;
     setLoading(true);
-    const start=new Date(date+"T00:00:00").toISOString();
-    const end=new Date(date+"T23:59:59.999").toISOString();
+    // ensure from<=to; swap if needed
+    let f=dateFrom, tt=dateTo;
+    if(f>tt){ const tmp=f; f=tt; tt=tmp; }
+    const start=new Date(f+"T00:00:00").toISOString();
+    const end=new Date(tt+"T23:59:59.999").toISOString();
     const {data}=await sb.from("call_logs")
       .select("*, clients(name,phone,city)")
       .eq("agent_id",agentId).gte("created_at",start).lte("created_at",end)
@@ -752,7 +849,7 @@ function AdminReports({t,showToast}){
     const row=team.find(x=>x.agent_id===agentId);
     setProgress(row||null);
     setLoading(false);
-  },[agentId,date,team]);
+  },[agentId,dateFrom,dateTo,team]);
   useEffect(()=>{loadReport();},[loadReport]);
 
   const agent=agents.find(a=>a.id===agentId);
@@ -773,14 +870,14 @@ function AdminReports({t,showToast}){
   function exportCsv(){
     const rows=[["Date","Time","Agent","Client","Phone","City","Outcome","Feedback"]];
     logs.forEach(l=>rows.push([
-      date, new Date(l.created_at).toLocaleTimeString(),
+      new Date(l.created_at).toLocaleDateString(), new Date(l.created_at).toLocaleTimeString(),
       agent?.full_name||"", l.clients?.name||"", l.clients?.phone||"",
       l.clients?.city||"", t.outcomes[l.outcome], (l.feedback||"").replace(/\n/g," ")
     ]));
     const csv="\uFEFF"+rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(",")).join("\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(blob); a.download="report_"+(agent?.full_name||"agent")+"_"+date+".csv"; a.click();
+    a.href=URL.createObjectURL(blob); a.download="report_"+(agent?.full_name||"agent")+"_"+dateFrom+"_"+dateTo+".csv"; a.click();
     showToast(t.exportCsv+" ✓");
   }
 
@@ -832,13 +929,15 @@ function AdminReports({t,showToast}){
 
       {/* ===== DAILY REPORT CONTROLS ===== */}
       <div className="card no-print" style={{padding:14}}>
-        <div className="grid" style={{gridTemplateColumns:"2fr 1.4fr auto auto",gap:10,alignItems:"end"}}>
+        <div className="grid" style={{gridTemplateColumns:"1.6fr 1fr 1fr auto auto",gap:10,alignItems:"end"}}>
           <label className="fld" style={{margin:0}}><span>{t.pickAgent}</span>
             <select value={agentId} onChange={e=>setAgentId(e.target.value)}>
               {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
             </select></label>
-          <label className="fld" style={{margin:0}}><span>{t.pickDate}</span>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label>
+          <label className="fld" style={{margin:0}}><span>{t.dateFrom}</span>
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></label>
+          <label className="fld" style={{margin:0}}><span>{t.dateTo}</span>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></label>
           <button className="btn-ghost" onClick={exportCsv}>⬇ CSV</button>
           <button className="btn-primary" onClick={printPdf}>🖨 {t.printPdf}</button>
         </div>
@@ -851,7 +950,8 @@ function AdminReports({t,showToast}){
             <div>
               <div style={{fontSize:12,color:"var(--muted)",fontWeight:600}}>{t.agentReport}</div>
               <div style={{fontSize:22,fontWeight:800}}>{agent?.full_name||"—"}</div>
-              <div style={{color:"var(--muted)",fontSize:13,marginTop:2}}>{t.on} {date}</div>
+              <div style={{color:"var(--muted)",fontSize:13,marginTop:2}}>
+                {t.on} {dateFrom===dateTo? dateFrom : (dateFrom+" → "+dateTo)}</div>
             </div>
             <div style={{textAlign:"end",color:"var(--muted)",fontSize:12}}>
               {t.generated}: {new Date().toLocaleString(t.dir==="rtl"?"ar-EG":"en-GB")}</div>
@@ -1144,6 +1244,169 @@ function AdminImport({t,showToast}){
   );
 }
 
+/* ==================== ADMIN: CUSTOMERS ==================== */
+const PAGE=50;
+function AdminCustomers({t,showToast}){
+  const [rows,setRows]=useState([]);
+  const [cities,setCities]=useState([]);
+  const [agents,setAgents]=useState([]);
+  const [q,setQ]=useState(""); const [cityF,setCityF]=useState("");
+  const [statF,setStatF]=useState(""); const [agentF,setAgentF]=useState("");
+  const [page,setPage]=useState(0); const [total,setTotal]=useState(0);
+  const [loading,setLoading]=useState(false);
+  const [editFor,setEditFor]=useState(null); const [histFor,setHistFor]=useState(null);
+
+  useEffect(()=>{(async()=>{
+    const {data:c}=await sb.from("distinct_cities").select("city");
+    setCities((c||[]).map(x=>x.city).filter(Boolean));
+    const {data:a}=await sb.from("profiles").select("id,full_name").eq("role","agent");
+    setAgents(a||[]);
+  })();},[]);
+
+  const buildQuery=useCallback((forCount)=>{
+    let query=sb.from("clients").select(forCount?"*":"*, profiles:assigned_to(full_name)",
+      forCount?{count:"exact",head:true}:{});
+    if(q){
+      const term=q.replace(/[%,]/g,"");
+      query=query.or("name.ilike.%"+term+"%,phone.ilike.%"+term+"%");
+    }
+    if(cityF) query=query.eq("city",cityF);
+    if(statF) query=query.eq("status",statF);
+    if(agentF==="__none__") query=query.is("assigned_to",null);
+    else if(agentF) query=query.eq("assigned_to",agentF);
+    return query;
+  },[q,cityF,statF,agentF]);
+
+  const load=useCallback(async(reset)=>{
+    setLoading(true);
+    const p=reset?0:page;
+    const {data}=await buildQuery(false)
+      .order("id",{ascending:true}).range(p*PAGE,(p+1)*PAGE-1);
+    if(reset){ setRows(data||[]); setPage(1); }
+    else { setRows(prev=>[...prev,...(data||[])]); setPage(p+1); }
+    const {count}=await buildQuery(true);
+    setTotal(count||0);
+    setLoading(false);
+  },[buildQuery,page]);
+
+  // reload from scratch whenever filters change
+  useEffect(()=>{ setPage(0); load(true); /*eslint-disable-next-line*/ },[q,cityF,statF,agentF]);
+
+  async function del(c){
+    if(!window.confirm(t.confirmDelete)) return;
+    const {error}=await sb.from("clients").delete().eq("id",c.id);
+    if(error){ showToast(error.message,true); return; }
+    setRows(prev=>prev.filter(x=>x.id!==c.id)); setTotal(x=>x-1);
+    showToast(t.deleted+" ✓");
+  }
+
+  return (
+    <div className="grid" style={{gap:16}}>
+      <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div style={{fontSize:20,fontWeight:800}}>{t.customers}
+          <span style={{color:"var(--muted)",fontWeight:600,fontSize:14}}> · {total}</span></div>
+      </div>
+
+      <div className="card" style={{padding:14}}>
+        <div className="grid" style={{gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:10}}>
+          <input placeholder={t.search} value={q} onChange={e=>setQ(e.target.value)}/>
+          <SearchSelect value={cityF} onChange={setCityF} options={cities}
+            placeholder={t.searchCity} allLabel={t.allCities}/>
+          <select value={statF} onChange={e=>setStatF(e.target.value)}>
+            <option value="">{t.allStatus}</option>
+            {["new",...OUTCOME_KEYS].map(s=><option key={s} value={s}>{t.outcomes[s]}</option>)}
+          </select>
+          <select value={agentF} onChange={e=>setAgentF(e.target.value)}>
+            <option value="">{t.allAgents}</option>
+            <option value="__none__">{t.unassignedFilter||t.unassigned}</option>
+            {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="card" style={{overflow:"auto"}}>
+        {rows.length===0 && !loading? <div style={{padding:40,textAlign:"center",color:"var(--muted)"}}>{t.noCustomers}</div> :
+        <table>
+          <thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th>
+            <th>{t.status}</th><th>{t.assignedAgent}</th><th style={{textAlign:"end"}}>{t.actions}</th></tr></thead>
+          <tbody>
+          {rows.map(c=>(
+            <tr key={c.id}>
+              <td style={{fontWeight:600}}>{c.name||"—"}</td>
+              <td><a href={"tel:"+c.phone} style={{textDecoration:"none"}}>{c.phone}</a></td>
+              <td style={{color:"var(--muted)"}}>{c.city||"—"}</td>
+              <td><Pill outcome={c.status} t={t}/></td>
+              <td style={{color:"var(--muted)"}}>{c.profiles?.full_name||"—"}</td>
+              <td style={{textAlign:"end",whiteSpace:"nowrap"}}>
+                <button className="btn-ghost" style={{padding:"5px 9px",marginInlineEnd:5}}
+                  onClick={()=>setHistFor(c)} title={t.viewHistory}>🕘</button>
+                <button className="btn-ghost" style={{padding:"5px 9px",marginInlineEnd:5}}
+                  onClick={()=>setEditFor(c)} title={t.edit2}>✏️</button>
+                <button className="btn-ghost" style={{padding:"5px 9px",color:"var(--red)",borderColor:"var(--red)44"}}
+                  onClick={()=>del(c)} title={t.deleteClient}>🗑</button>
+              </td>
+            </tr>
+          ))}
+          </tbody>
+        </table>}
+        {loading && <div className="spin" style={{margin:"20px auto"}}></div>}
+      </div>
+
+      {rows.length<total && !loading &&
+        <button className="btn-ghost" onClick={()=>load(false)}>{t.loadMore} ({rows.length}/{total})</button>}
+
+      {editFor && <CustomerEditModal t={t} client={editFor} agents={agents}
+        onClose={()=>setEditFor(null)}
+        onSaved={(upd)=>{setRows(prev=>prev.map(x=>x.id===upd.id?{...x,...upd}:x)); setEditFor(null); showToast(t.editedOk+" ✓");}}
+        showToast={showToast}/>}
+      {histFor && <HistoryModal t={t} client={histFor} onClose={()=>setHistFor(null)}/>}
+    </div>
+  );
+}
+
+/* Admin edit modal — can edit name/city/location/assigned agent, no lock */
+function CustomerEditModal({t,client,agents,onClose,onSaved,showToast}){
+  const [name,setName]=useState(client.name||"");
+  const [city,setCity]=useState(client.city||"");
+  const [location,setLocation]=useState(client.location||"");
+  const [assigned,setAssigned]=useState(client.assigned_to||"");
+  const [busy,setBusy]=useState(false);
+  async function save(){
+    setBusy(true);
+    const upd={name:name.trim(),city:city.trim(),location:location.trim(),
+      assigned_to:assigned||null};
+    const {error}=await sb.from("clients").update(upd).eq("id",client.id);
+    setBusy(false);
+    if(error){ showToast(error.message,true); return; }
+    onSaved({id:client.id,...upd});
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="card" style={{width:460,maxWidth:"100%",padding:26}} onClick={e=>e.stopPropagation()}>
+        <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:800}}>{t.editClient}</h2>
+        <div className="row" style={{gap:8,marginBottom:16}}>
+          <span className="pill" style={{background:"var(--brand)22",color:"var(--brand)"}}>📞 {client.phone}</span>
+        </div>
+        <label className="fld"><span>{t.name}</span>
+          <input value={name} onChange={e=>setName(e.target.value)} autoFocus/></label>
+        <label className="fld"><span>{t.city}</span>
+          <input value={city} onChange={e=>setCity(e.target.value)}/></label>
+        <label className="fld"><span>{t.location}</span>
+          <textarea rows="2" value={location} onChange={e=>setLocation(e.target.value)}></textarea></label>
+        <label className="fld"><span>{t.assignedAgent}</span>
+          <select value={assigned} onChange={e=>setAssigned(e.target.value)}>
+            <option value="">{t.unassigned}</option>
+            {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
+          </select></label>
+        <div className="row" style={{justifyContent:"flex-end",gap:10}}>
+          <button className="btn-ghost" onClick={onClose}>{t.cancel}</button>
+          <button className="btn-primary" disabled={busy} onClick={save}>{busy?t.saving:t.saveEdit}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ==================== ROOT APP ==================== */
 function App(){
   const [lang,setLang]=useState("ar");
@@ -1181,14 +1444,14 @@ function App(){
   if(!session) return <Login lang={lang} setLang={setLang} onLogin={()=>{}}/>;
   if(!me) return <div className="spin"></div>;
 
-  const adminTabs=[["dashboard",t.dashboard],["assign",t.assign],["import",t.importT],["reports",t.reports],["confirmed",t.confirmed]];
+  const adminTabs=[["dashboard",t.dashboard],["customers",t.customers],["assign",t.assign],["import",t.importT],["reports",t.reports],["confirmed",t.confirmed]];
 
   return (
     <div>
       <Header t={t} lang={lang} setLang={setLang} me={me} onLogout={logout}/>
       <div style={{maxWidth:1180,margin:"0 auto",padding:"20px 18px 60px"}}>
         {me.role==="admin" && (
-          <div className="tabbar" style={{marginBottom:20,maxWidth:700}}>
+          <div className="tabbar" style={{marginBottom:20,maxWidth:820}}>
             {adminTabs.map(([k,l])=>(
               <button key={k} className={tab===k?"active":""} onClick={()=>setTab(k)}>{l}</button>
             ))}
@@ -1196,6 +1459,7 @@ function App(){
         )}
         {me.role==="admin"? (
           tab==="dashboard"? <AdminDashboard t={t}/> :
+          tab==="customers"? <AdminCustomers t={t} showToast={showToast}/> :
           tab==="assign"? <AdminAssign t={t} showToast={showToast}/> :
           tab==="import"? <AdminImport t={t} showToast={showToast}/> :
           tab==="confirmed"? <AdminConfirmed t={t} showToast={showToast}/> :
