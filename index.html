@@ -537,13 +537,18 @@ function AdminDashboard({t}){
   const load=useCallback(async()=>{
     const {data:ag}=await sb.from("agent_stats").select("*");
     setStats(ag||[]);
-    const {data:cl}=await sb.from("clients").select("status");
-    const c={total:cl?.length||0,contacted:0,notCalled:0,interested:0};
-    (cl||[]).forEach(r=>{
-      if(r.status==="new") c.notCalled++; else c.contacted++;
-      if(r.status==="interested") c.interested++;
-    });
-    setTotals(c);
+    // Use head:true count queries so we get true totals, not capped at 1000 rows.
+    const countWhere=async(build)=>{
+      let q=sb.from("clients").select("*",{count:"exact",head:true});
+      if(build) q=build(q);
+      const {count}=await q; return count||0;
+    };
+    const [total,notCalled,interested]=await Promise.all([
+      countWhere(null),
+      countWhere(q=>q.eq("status","new")),
+      countWhere(q=>q.eq("status","interested")),
+    ]);
+    setTotals({total, notCalled, contacted:total-notCalled, interested});
   },[]);
   useEffect(()=>{load();},[load]);
   if(stats===null||totals===null) return <div className="spin"></div>;
