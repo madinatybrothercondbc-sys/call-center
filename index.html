@@ -137,6 +137,14 @@ const T = {
     reachedBy:"Reached by", reachedAt:"Reached at", noConfirmed:"No confirmed clients yet.",
     editedOk:"Client updated", confirmedCount:"Confirmed clients",
     editLocked:"This client is locked — you can only edit clients that are New, No answer, or Wrong number.",
+    importT:"Import", importClients:"Import new clients",
+    pasteHere:"Paste your sheet here (or upload a CSV file)",
+    pasteHint:"Columns: name, phone, city, location — one client per line. First row can be headers.",
+    uploadCsv:"Upload CSV", preview:"Preview", willAdd:"Will add",
+    willSkip:"Already exist (skip)", invalid:"Invalid phone", runImport:"Import clients",
+    importing:"Importing…", importDone:"Added {a} new, skipped {s} duplicates.",
+    nothingToImport:"Nothing to import — check your data.", rowsFound:"rows found",
+    clearImport:"Clear",
   },
   ar: {
     dir:"rtl", appName:"مركز الاتصال", tagline:"إعادة التواصل مع العملاء",
@@ -182,6 +190,14 @@ const T = {
     reachedBy:"تم التواصل بواسطة", reachedAt:"وقت التواصل", noConfirmed:"لا يوجد عملاء مؤكدون بعد.",
     editedOk:"تم تحديث العميل", confirmedCount:"العملاء المؤكدون",
     editLocked:"هذا العميل مقفل — يمكنك التعديل فقط للعملاء بحالة: جديد أو لم يرد أو رقم خطأ.",
+    importT:"استيراد", importClients:"استيراد عملاء جدد",
+    pasteHere:"الصق بيانات الشيت هنا (أو ارفع ملف CSV)",
+    pasteHint:"الأعمدة: الاسم، الهاتف، المدينة، العنوان — عميل واحد بكل سطر. السطر الأول يمكن أن يكون عناوين.",
+    uploadCsv:"رفع ملف CSV", preview:"معاينة", willAdd:"سيُضاف",
+    willSkip:"موجود بالفعل (تخطّي)", invalid:"رقم غير صالح", runImport:"استيراد العملاء",
+    importing:"جارٍ الاستيراد…", importDone:"تمت إضافة {a} عميل جديد، وتخطّي {s} مكرر.",
+    nothingToImport:"لا يوجد ما يُستورد — تحقق من البيانات.", rowsFound:"سطر",
+    clearImport:"مسح",
   }
 };
 
@@ -984,6 +1000,145 @@ function AdminConfirmed({t,showToast}){
   );
 }
 
+/* ==================== ADMIN: IMPORT NEW CLIENTS ==================== */
+// Normalize an Egyptian phone the same way the original cleaning did.
+function normPhone(raw){
+  let d=(raw||"").replace(/\D/g,"");
+  if(d.length===11 && d.startsWith("01") && "0125".includes(d[2])) return d;
+  if(d.length===10 && d[0]==="1" && "0125".includes(d[1])) return "0"+d;
+  return null; // not a clean 11-digit mobile → treated as invalid for import
+}
+function parseSheet(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const rows=[];
+  for(const line of lines){
+    // split on comma or tab
+    const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(p=>p.replace(/^"|"$/g,"").trim());
+    rows.push(parts);
+  }
+  if(rows.length===0) return [];
+  // detect header row: if first row's 2nd cell isn't a phone-like value
+  const looksHeader = rows[0].some(c=>/name|phone|city|location|الاسم|الهاتف|المدينة|العنوان/i.test(c));
+  const body = looksHeader? rows.slice(1): rows;
+  return body.map(r=>({name:(r[0]||"").trim(), phoneRaw:(r[1]||"").trim(),
+    city:(r[2]||"").trim(), location:(r[3]||"").trim()}));
+}
+
+function AdminImport({t,showToast}){
+  const [text,setText]=useState("");
+  const [analysis,setAnalysis]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const fileRef=useRef(null);
+
+  async function analyze(raw){
+    const parsed=parseSheet(raw);
+    // normalize + split valid/invalid + dedupe within paste
+    const seen=new Set(); const valid=[]; const invalid=[];
+    for(const row of parsed){
+      const p=normPhone(row.phoneRaw);
+      if(!p){ invalid.push(row); continue; }
+      if(seen.has(p)) continue; // duplicate within the paste itself
+      seen.add(p);
+      valid.push({...row, phone:p});
+    }
+    // check which already exist in DB (query in chunks)
+    const phones=valid.map(v=>v.phone);
+    const existing=new Set();
+    for(let i=0;i<phones.length;i+=500){
+      const chunk=phones.slice(i,i+500);
+      const {data}=await sb.from("clients").select("phone").in("phone",chunk);
+      (data||[]).forEach(r=>existing.add(r.phone));
+    }
+    const toAdd=valid.filter(v=>!existing.has(v.phone));
+    const dup=valid.filter(v=>existing.has(v.phone));
+    setAnalysis({total:parsed.length, toAdd, dup, invalid});
+  }
+
+  function onText(v){ setText(v); if(v.trim()) analyze(v); else setAnalysis(null); }
+  function onFile(e){
+    const f=e.target.files?.[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{ setText(r.result); analyze(r.result); };
+    r.readAsText(f);
+  }
+
+  async function runImport(){
+    if(!analysis || analysis.toAdd.length===0){ showToast(t.nothingToImport,true); return; }
+    setBusy(true);
+    const rows=analysis.toAdd.map(v=>({name:v.name||null, phone:v.phone,
+      city:v.city||null, location:v.location||null, status:"new"}));
+    let added=0;
+    // insert in chunks; ignore duplicates that slip in via the unique constraint
+    for(let i=0;i<rows.length;i+=500){
+      const chunk=rows.slice(i,i+500);
+      const {data,error}=await sb.from("clients").insert(chunk).select("id");
+      if(!error && data) added+=data.length;
+      else if(error){
+        // fallback: constraint may reject a race dup — insert one by one
+        for(const one of chunk){
+          const {error:e1}=await sb.from("clients").insert(one);
+          if(!e1) added++;
+        }
+      }
+    }
+    setBusy(false);
+    const skipped=analysis.dup.length + (analysis.toAdd.length-added);
+    showToast(t.importDone.replace("{a}",added).replace("{s}",skipped));
+    setText(""); setAnalysis(null);
+    if(fileRef.current) fileRef.current.value="";
+  }
+
+  return (
+    <div className="grid" style={{gap:16,maxWidth:760}}>
+      <div style={{fontSize:20,fontWeight:800}}>{t.importClients}</div>
+
+      <div className="card" style={{padding:18}}>
+        <label className="fld"><span>{t.pasteHere}</span>
+          <textarea rows="8" value={text} onChange={e=>onText(e.target.value)}
+            placeholder="name, phone, city, location" style={{fontFamily:"monospace",fontSize:13}}></textarea>
+        </label>
+        <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>{t.pasteHint}</div>
+        <div className="row" style={{gap:10}}>
+          <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={onFile}
+            style={{width:"auto",flex:1}}/>
+          {text && <button className="btn-ghost" onClick={()=>{setText("");setAnalysis(null);if(fileRef.current)fileRef.current.value="";}}>{t.clearImport}</button>}
+        </div>
+      </div>
+
+      {analysis && (
+        <div className="card" style={{padding:18}}>
+          <div style={{fontWeight:700,marginBottom:14}}>{t.preview} · {analysis.total} {t.rowsFound}</div>
+          <div className="grid" style={{gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+            <div className="mini card" style={{border:"1px solid var(--green)"}}>
+              <div className="num" style={{color:"var(--green)"}}>{analysis.toAdd.length}</div>
+              <div className="lbl">{t.willAdd}</div></div>
+            <div className="mini card" style={{border:"1px solid var(--amber)"}}>
+              <div className="num" style={{color:"var(--amber)"}}>{analysis.dup.length}</div>
+              <div className="lbl">{t.willSkip}</div></div>
+            <div className="mini card" style={{border:"1px solid var(--slate)"}}>
+              <div className="num" style={{color:"var(--slate)"}}>{analysis.invalid.length}</div>
+              <div className="lbl">{t.invalid}</div></div>
+          </div>
+
+          {analysis.toAdd.length>0 &&
+            <div style={{maxHeight:220,overflow:"auto",border:"1px solid var(--line)",borderRadius:10,marginBottom:16}}>
+              <table><thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th></tr></thead>
+                <tbody>
+                {analysis.toAdd.slice(0,50).map((v,i)=>(
+                  <tr key={i}><td>{v.name||"—"}</td><td>{v.phone}</td><td style={{color:"var(--muted)"}}>{v.city||"—"}</td></tr>
+                ))}
+                </tbody></table>
+              {analysis.toAdd.length>50 && <div style={{padding:"8px 12px",color:"var(--muted)",fontSize:12}}>+{analysis.toAdd.length-50}…</div>}
+            </div>}
+
+          <button className="btn-primary" style={{width:"100%"}} disabled={busy||analysis.toAdd.length===0}
+            onClick={runImport}>{busy?t.importing:t.runImport+" ("+analysis.toAdd.length+")"}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ==================== ROOT APP ==================== */
 function App(){
   const [lang,setLang]=useState("ar");
@@ -1021,14 +1176,14 @@ function App(){
   if(!session) return <Login lang={lang} setLang={setLang} onLogin={()=>{}}/>;
   if(!me) return <div className="spin"></div>;
 
-  const adminTabs=[["dashboard",t.dashboard],["assign",t.assign],["reports",t.reports],["confirmed",t.confirmed]];
+  const adminTabs=[["dashboard",t.dashboard],["assign",t.assign],["import",t.importT],["reports",t.reports],["confirmed",t.confirmed]];
 
   return (
     <div>
       <Header t={t} lang={lang} setLang={setLang} me={me} onLogout={logout}/>
       <div style={{maxWidth:1180,margin:"0 auto",padding:"20px 18px 60px"}}>
         {me.role==="admin" && (
-          <div className="tabbar" style={{marginBottom:20,maxWidth:600}}>
+          <div className="tabbar" style={{marginBottom:20,maxWidth:700}}>
             {adminTabs.map(([k,l])=>(
               <button key={k} className={tab===k?"active":""} onClick={()=>setTab(k)}>{l}</button>
             ))}
@@ -1037,6 +1192,7 @@ function App(){
         {me.role==="admin"? (
           tab==="dashboard"? <AdminDashboard t={t}/> :
           tab==="assign"? <AdminAssign t={t} showToast={showToast}/> :
+          tab==="import"? <AdminImport t={t} showToast={showToast}/> :
           tab==="confirmed"? <AdminConfirmed t={t} showToast={showToast}/> :
           <AdminReports t={t} showToast={showToast}/>
         ) : (
