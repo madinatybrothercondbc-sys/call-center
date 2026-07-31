@@ -59,6 +59,22 @@
   label.fld span{display:block;color:var(--muted);font-size:12.5px;margin-bottom:6px;font-weight:600}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;
     justify-content:center;z-index:50;padding:16px}
+  .mini{padding:14px 16px}
+  .mini .num{font-size:23px;font-weight:800;line-height:1}
+  .mini .lbl{color:var(--muted);font-size:11.5px;margin-top:5px;font-weight:600}
+  @media print{
+    @page{margin:14mm}
+    body{background:#fff !important;color:#111 !important}
+    .no-print{display:none !important}
+    .card{box-shadow:none !important;border:1px solid #ccc !important;background:#fff !important;
+      break-inside:avoid}
+    .stat .num,.mini .num{color:#111 !important}
+    .lbl,.mini .lbl,th{color:#444 !important}
+    table,td,th{border-color:#ccc !important}
+    #root>div>div{max-width:100% !important}
+    .print-area,.print-area *{visibility:visible}
+    .pill{border:1px solid #ccc}
+  }
 </style>
 </head>
 <body>
@@ -70,8 +86,8 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
    CONFIG  — paste your Supabase project URL + anon key here
    (Supabase dashboard → Project Settings → API)
    ============================================================ */
-const SUPABASE_URL  = "https://lymohxkzgywdqnqbadgn.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bW9oeGt6Z3l3ZHFucWJhZGduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0NDc5MTksImV4cCI6MjEwMTAyMzkxOX0.ehi1vskAi-1fTAMrFYvEE0ivImmWqaJJs8OsX-fp2Sc";
+const SUPABASE_URL  = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON = "YOUR_SUPABASE_ANON_KEY";
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
@@ -107,6 +123,15 @@ const T = {
     noHistory:"No calls logged yet.", by:"by", clientList:"Client list",
     totalClients:"Total clients", contacted:"Contacted", notCalled:"Not called",
     interestedC:"Interested", refresh:"Refresh",
+    dailyReport:"Daily report", teamOverview:"Team overview", pickDate:"Date",
+    pickAgent:"Agent", printPdf:"Download / Print PDF", assignedN:"Assigned",
+    calledN:"Called", remainingN:"Remaining", noAnswerN:"No answer",
+    callbacksDue:"Callbacks due", callsMade:"Calls made", answerRateN:"Answer rate",
+    interestRate:"Interest rate", outcomeBreakdown:"Outcome breakdown",
+    detailedCalls:"Detailed calls", time:"Time", noCallsThatDay:"No calls on this day.",
+    reportFor:"Report for", on:"on", progress:"Progress", summary:"Summary",
+    today:"Today", generated:"Generated", agentReport:"Agent report",
+    of:"of", called2:"called",
   },
   ar: {
     dir:"rtl", appName:"مركز الاتصال", tagline:"إعادة التواصل مع العملاء",
@@ -138,6 +163,15 @@ const T = {
     noHistory:"لا مكالمات مسجلة بعد.", by:"بواسطة", clientList:"قائمة العملاء",
     totalClients:"إجمالي العملاء", contacted:"تم التواصل", notCalled:"لم يتم الاتصال",
     interestedC:"مهتمون", refresh:"تحديث",
+    dailyReport:"التقرير اليومي", teamOverview:"نظرة عامة على الفريق", pickDate:"التاريخ",
+    pickAgent:"الموظف", printPdf:"تحميل / طباعة PDF", assignedN:"المُسند",
+    calledN:"تم الاتصال", remainingN:"المتبقي", noAnswerN:"لم يرد",
+    callbacksDue:"معاودات مستحقة", callsMade:"المكالمات", answerRateN:"نسبة الرد",
+    interestRate:"نسبة الاهتمام", outcomeBreakdown:"توزيع النتائج",
+    detailedCalls:"تفاصيل المكالمات", time:"الوقت", noCallsThatDay:"لا مكالمات في هذا اليوم.",
+    reportFor:"تقرير", on:"بتاريخ", progress:"التقدم", summary:"ملخص",
+    today:"اليوم", generated:"صدر في", agentReport:"تقرير الموظف",
+    of:"من", called2:"تم الاتصال",
   }
 };
 
@@ -560,80 +594,234 @@ function AdminAssign({t,showToast}){
   );
 }
 
-/* ==================== ADMIN: REPORTS / CALLBACKS ==================== */
+/* ==================== DONUT CHART (SVG, no libs) ==================== */
+function Donut({data,size=150}){
+  const total=data.reduce((a,d)=>a+d.value,0);
+  const r=size/2-14, cx=size/2, cy=size/2, C=2*Math.PI*r;
+  let acc=0;
+  return (
+    <svg width={size} height={size} viewBox={"0 0 "+size+" "+size} style={{transform:"rotate(-90deg)"}}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--panel2)" strokeWidth="14"/>
+      {total>0 && data.filter(d=>d.value>0).map((d,i)=>{
+        const frac=d.value/total, dash=frac*C;
+        const el=<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={d.color}
+          strokeWidth="14" strokeDasharray={dash+" "+(C-dash)}
+          strokeDashoffset={-acc*C} strokeLinecap="butt"/>;
+        acc+=frac; return el;
+      })}
+    </svg>
+  );
+}
+
+/* ==================== ADMIN: REPORTS ==================== */
 function AdminReports({t,showToast}){
-  const [logs,setLogs]=useState(null);
-  const [callbacks,setCallbacks]=useState([]);
+  const [agents,setAgents]=useState([]);
+  const [team,setTeam]=useState([]);
+  const [callbacksDue,setCallbacksDue]=useState({});
+  const [agentId,setAgentId]=useState("");
+  const [date,setDate]=useState(()=>new Date().toISOString().slice(0,10));
+  const [logs,setLogs]=useState([]);
+  const [progress,setProgress]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  // load agents + team overview once
   useEffect(()=>{(async()=>{
-    const {data}=await sb.from("call_logs")
-      .select("*, profiles(full_name), clients(name,phone,city)")
-      .order("created_at",{ascending:false}).limit(500);
-    setLogs(data||[]);
-    const today=new Date(); today.setHours(23,59,59,999);
-    const {data:cb}=await sb.from("call_logs")
-      .select("*, clients(name,phone,city)")
-      .not("callback_at","is",null).lte("callback_at",today.toISOString())
-      .order("callback_at",{ascending:true});
-    setCallbacks(cb||[]);
+    const {data:ag}=await sb.from("profiles").select("id,full_name").eq("role","agent").eq("active",true);
+    setAgents(ag||[]);
+    const {data:as}=await sb.from("agent_assignment_stats").select("*");
+    setTeam(as||[]);
+    const {data:cb}=await sb.from("agent_callbacks_due").select("*");
+    const m={}; (cb||[]).forEach(r=>m[r.agent_id]=r.callbacks_due); setCallbacksDue(m);
+    if(ag&&ag.length){ setAgentId(ag[0].id); }
   })();},[]);
 
+  // load the selected agent's day report
+  const loadReport=useCallback(async()=>{
+    if(!agentId) return;
+    setLoading(true);
+    const start=new Date(date+"T00:00:00").toISOString();
+    const end=new Date(date+"T23:59:59.999").toISOString();
+    const {data}=await sb.from("call_logs")
+      .select("*, clients(name,phone,city)")
+      .eq("agent_id",agentId).gte("created_at",start).lte("created_at",end)
+      .order("created_at",{ascending:true});
+    setLogs(data||[]);
+    const row=team.find(x=>x.agent_id===agentId);
+    setProgress(row||null);
+    setLoading(false);
+  },[agentId,date,team]);
+  useEffect(()=>{loadReport();},[loadReport]);
+
+  const agent=agents.find(a=>a.id===agentId);
+  const counts=useMemo(()=>{
+    const c={}; OUTCOME_KEYS.forEach(k=>c[k]=0);
+    logs.forEach(l=>{ if(c[l.outcome]!=null) c[l.outcome]++; });
+    return c;
+  },[logs]);
+  const totalCalls=logs.length;
+  const answered=counts.answered+counts.interested+counts.not_interested; // someone picked up
+  const answerRate=totalCalls?Math.round(answered/totalCalls*100):0;
+  const interestRate=totalCalls?Math.round(counts.interested/totalCalls*100):0;
+
+  const donutData=OUTCOME_KEYS.map(k=>({value:counts[k],color:OUTCOME_COLORS[k],key:k}));
+
+  function printPdf(){ window.print(); }
+
   function exportCsv(){
-    const rows=[["Date","Agent","Client","Phone","City","Outcome","Feedback"]];
-    (logs||[]).forEach(l=>rows.push([
-      new Date(l.created_at).toLocaleString(),
-      l.profiles?.full_name||"", l.clients?.name||"", l.clients?.phone||"",
-      l.clients?.city||"", l.outcome, (l.feedback||"").replace(/\n/g," ")
+    const rows=[["Date","Time","Agent","Client","Phone","City","Outcome","Feedback"]];
+    logs.forEach(l=>rows.push([
+      date, new Date(l.created_at).toLocaleTimeString(),
+      agent?.full_name||"", l.clients?.name||"", l.clients?.phone||"",
+      l.clients?.city||"", t.outcomes[l.outcome], (l.feedback||"").replace(/\n/g," ")
     ]));
     const csv="\uFEFF"+rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(",")).join("\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(blob); a.download="call_report.csv"; a.click();
+    a.href=URL.createObjectURL(blob); a.download="report_"+(agent?.full_name||"agent")+"_"+date+".csv"; a.click();
     showToast(t.exportCsv+" ✓");
   }
 
-  if(logs===null) return <div className="spin"></div>;
   return (
-    <div className="grid" style={{gap:16}}>
-      <div className="row" style={{justifyContent:"space-between"}}>
-        <div style={{fontSize:20,fontWeight:800}}>{t.reports}</div>
-        <button className="btn-primary" onClick={exportCsv}>⬇ {t.exportCsv}</button>
+    <div className="grid" style={{gap:18}}>
+      <div style={{fontSize:20,fontWeight:800}}>{t.reports}</div>
+
+      {/* ===== TEAM OVERVIEW ===== */}
+      <div className="card no-print" style={{overflow:"auto"}}>
+        <div style={{padding:"14px 18px",fontWeight:700,borderBottom:"1px solid var(--line)"}}>
+          👥 {t.teamOverview}</div>
+        {team.length===0? <div style={{padding:22,color:"var(--muted)"}}>{t.noData}</div> :
+        <table>
+          <thead><tr>
+            <th>{t.agentName}</th><th>{t.assignedN}</th><th>{t.calledN}</th>
+            <th>{t.remainingN}</th><th>{t.interestedC}</th><th>{t.noAnswerN}</th>
+            <th>{t.callbacksDue}</th><th className="no-print"></th>
+          </tr></thead>
+          <tbody>
+          {team.map(r=>{
+            const pct=r.assigned?Math.round(r.called/r.assigned*100):0;
+            return (
+            <tr key={r.agent_id}>
+              <td style={{fontWeight:600}}>{r.full_name}</td>
+              <td>{r.assigned}</td>
+              <td>
+                <div className="row" style={{gap:8}}>
+                  <span>{r.called}</span>
+                  <div style={{flex:1,minWidth:60,height:7,background:"var(--panel2)",borderRadius:4,overflow:"hidden"}}>
+                    <div style={{width:pct+"%",height:"100%",background:"var(--green)"}}></div>
+                  </div>
+                  <span style={{color:"var(--muted)",fontSize:12}}>{pct}%</span>
+                </div>
+              </td>
+              <td>{r.remaining}</td>
+              <td style={{color:"var(--teal)",fontWeight:600}}>{r.interested}</td>
+              <td style={{color:"var(--muted)"}}>{r.no_answer}</td>
+              <td style={{color:(callbacksDue[r.agent_id]?"var(--amber)":"var(--muted)"),fontWeight:600}}>
+                {callbacksDue[r.agent_id]||0}</td>
+              <td className="no-print" style={{textAlign:"end"}}>
+                <button className="btn-ghost" style={{padding:"5px 12px"}}
+                  onClick={()=>setAgentId(r.agent_id)}>{t.dailyReport}</button>
+              </td>
+            </tr>);
+          })}
+          </tbody>
+        </table>}
       </div>
 
-      <div className="card" style={{padding:0,overflow:"hidden"}}>
-        <div style={{padding:"14px 18px",fontWeight:700,borderBottom:"1px solid var(--line)"}}>
-          ⏰ {t.callbacksToday} · {callbacks.length}</div>
-        {callbacks.length===0? <div style={{padding:22,color:"var(--muted)"}}>{t.noCallbacks}</div> :
-          <table><tbody>
-            {callbacks.map(c=>(
-              <tr key={c.id}>
-                <td style={{fontWeight:600}}>{c.clients?.name||"—"}</td>
-                <td><a href={"tel:"+c.clients?.phone} style={{textDecoration:"none"}}>{c.clients?.phone}</a></td>
-                <td style={{color:"var(--muted)"}}>{c.clients?.city}</td>
-                <td style={{color:"var(--amber)"}}>{fmtDate(c.callback_at,t.dir)}</td>
+      {/* ===== DAILY REPORT CONTROLS ===== */}
+      <div className="card no-print" style={{padding:14}}>
+        <div className="grid" style={{gridTemplateColumns:"2fr 1.4fr auto auto",gap:10,alignItems:"end"}}>
+          <label className="fld" style={{margin:0}}><span>{t.pickAgent}</span>
+            <select value={agentId} onChange={e=>setAgentId(e.target.value)}>
+              {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
+            </select></label>
+          <label className="fld" style={{margin:0}}><span>{t.pickDate}</span>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label>
+          <button className="btn-ghost" onClick={exportCsv}>⬇ CSV</button>
+          <button className="btn-primary" onClick={printPdf}>🖨 {t.printPdf}</button>
+        </div>
+      </div>
+
+      {/* ===== THE REPORT (print area) ===== */}
+      <div className="print-area grid" style={{gap:16}}>
+        <div className="card" style={{padding:"18px 20px"}}>
+          <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{fontSize:12,color:"var(--muted)",fontWeight:600}}>{t.agentReport}</div>
+              <div style={{fontSize:22,fontWeight:800}}>{agent?.full_name||"—"}</div>
+              <div style={{color:"var(--muted)",fontSize:13,marginTop:2}}>{t.on} {date}</div>
+            </div>
+            <div style={{textAlign:"end",color:"var(--muted)",fontSize:12}}>
+              {t.generated}: {new Date().toLocaleString(t.dir==="rtl"?"ar-EG":"en-GB")}</div>
+          </div>
+        </div>
+
+        {loading? <div className="spin"></div> : <>
+        {/* summary stat cards */}
+        <div className="grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:12}}>
+          <div className="card mini"><div className="num" style={{color:"var(--violet)"}}>{totalCalls}</div><div className="lbl">{t.callsMade}</div></div>
+          <div className="card mini"><div className="num" style={{color:"var(--green)"}}>{answerRate}%</div><div className="lbl">{t.answerRateN}</div></div>
+          <div className="card mini"><div className="num" style={{color:"var(--teal)"}}>{counts.interested}</div><div className="lbl">{t.interestedC}</div></div>
+          <div className="card mini"><div className="num" style={{color:"var(--pink)"}}>{interestRate}%</div><div className="lbl">{t.interestRate}</div></div>
+          <div className="card mini"><div className="num" style={{color:"var(--amber)"}}>{counts.call_back}</div><div className="lbl">{t.outcomes.call_back}</div></div>
+          {progress && <div className="card mini"><div className="num" style={{color:"var(--brand)"}}>{progress.assigned}</div><div className="lbl">{t.assignedN}</div></div>}
+        </div>
+
+        {/* chart + progress */}
+        <div className="grid" style={{gridTemplateColumns:"auto 1fr",gap:16,alignItems:"center"}}>
+          <div className="card" style={{padding:18,display:"flex",flexDirection:"column",alignItems:"center"}}>
+            <div style={{fontWeight:700,marginBottom:10,fontSize:14}}>{t.outcomeBreakdown}</div>
+            <div style={{position:"relative"}}>
+              <Donut data={donutData}/>
+              <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",
+                alignItems:"center",justifyContent:"center"}}>
+                <div style={{fontSize:26,fontWeight:800}}>{totalCalls}</div>
+                <div style={{fontSize:11,color:"var(--muted)"}}>{t.callsMade}</div>
+              </div>
+            </div>
+          </div>
+          <div className="card" style={{padding:18}}>
+            <div style={{fontWeight:700,marginBottom:12,fontSize:14}}>{t.summary}</div>
+            <div className="grid" style={{gap:9}}>
+              {OUTCOME_KEYS.map(k=>{
+                const v=counts[k], pct=totalCalls?Math.round(v/totalCalls*100):0;
+                return (
+                <div key={k} className="row" style={{gap:10}}>
+                  <span style={{width:11,height:11,borderRadius:3,background:OUTCOME_COLORS[k],flexShrink:0}}></span>
+                  <span style={{width:120,fontSize:13}}>{t.outcomes[k]}</span>
+                  <div style={{flex:1,height:8,background:"var(--panel2)",borderRadius:4,overflow:"hidden"}}>
+                    <div style={{width:pct+"%",height:"100%",background:OUTCOME_COLORS[k]}}></div>
+                  </div>
+                  <span style={{width:64,textAlign:"end",fontSize:13,color:"var(--muted)"}}>{v} · {pct}%</span>
+                </div>);
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* detailed call list */}
+        <div className="card" style={{overflow:"auto"}}>
+          <div style={{padding:"14px 18px",fontWeight:700,borderBottom:"1px solid var(--line)"}}>
+            📋 {t.detailedCalls} · {totalCalls}</div>
+          {totalCalls===0? <div style={{padding:22,color:"var(--muted)"}}>{t.noCallsThatDay}</div> :
+          <table>
+            <thead><tr><th>{t.time}</th><th>{t.name}</th><th>{t.phone}</th>
+              <th>{t.city}</th><th>{t.outcome}</th><th>{t.feedback}</th></tr></thead>
+            <tbody>
+            {logs.map(l=>(
+              <tr key={l.id}>
+                <td style={{color:"var(--muted)",fontSize:12,whiteSpace:"nowrap"}}>
+                  {new Date(l.created_at).toLocaleTimeString(t.dir==="rtl"?"ar-EG":"en-GB",{hour:"2-digit",minute:"2-digit"})}</td>
+                <td style={{fontWeight:600}}>{l.clients?.name||"—"}</td>
+                <td>{l.clients?.phone}</td>
+                <td style={{color:"var(--muted)"}}>{l.clients?.city||"—"}</td>
+                <td><Pill outcome={l.outcome} t={t}/></td>
+                <td style={{maxWidth:240,fontSize:13}}>{l.feedback||"—"}</td>
               </tr>
             ))}
-          </tbody></table>}
-      </div>
-
-      <div className="card" style={{overflow:"auto"}}>
-        <div style={{padding:"14px 18px",fontWeight:700,borderBottom:"1px solid var(--line)"}}>{t.callHistory}</div>
-        <table>
-          <thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th>
-            <th>{t.outcome}</th><th>{t.agentName}</th><th>{t.feedback}</th><th>{t.history}</th></tr></thead>
-          <tbody>
-          {logs.map(l=>(
-            <tr key={l.id}>
-              <td style={{fontWeight:600}}>{l.clients?.name||"—"}</td>
-              <td>{l.clients?.phone}</td>
-              <td style={{color:"var(--muted)"}}>{l.clients?.city}</td>
-              <td><Pill outcome={l.outcome} t={t}/></td>
-              <td style={{color:"var(--muted)"}}>{l.profiles?.full_name}</td>
-              <td style={{maxWidth:220,color:"var(--muted)",fontSize:13}}>{l.feedback||"—"}</td>
-              <td style={{color:"var(--muted)",fontSize:12,whiteSpace:"nowrap"}}>{fmtDate(l.created_at,t.dir)}</td>
-            </tr>
-          ))}
-          </tbody>
-        </table>
+            </tbody>
+          </table>}
+        </div>
+        </>}
       </div>
     </div>
   );
