@@ -164,6 +164,7 @@ const T = {
     activitySaved:"Call activity saved", waSent:"WhatsApp", waSentAt:"WhatsApp sent",
     waBy:"Sent by", notConfirmed:"Not confirmed", confirmFirst:"Review & confirm the client's details, then log the call.",
     alreadyConfirmed:"Confirmed", sendWhatsapp:"Send WhatsApp",
+    confirmSure:"Are you sure? Tap again to confirm",
   },
   ar: {
     dir:"rtl", appName:"براذر كوند", tagline:"للتكييف · مركز الاتصال",
@@ -230,6 +231,7 @@ const T = {
     activitySaved:"تم حفظ نشاط المكالمة", waSent:"واتساب", waSentAt:"تم إرسال واتساب",
     waBy:"أرسله", notConfirmed:"غير مؤكد", confirmFirst:"راجع وأكّد بيانات العميل، ثم سجّل المكالمة.",
     alreadyConfirmed:"مؤكد", sendWhatsapp:"إرسال واتساب",
+    confirmSure:"هل أنت متأكد؟ اضغط مرة أخرى للتأكيد",
   }
 };
 
@@ -447,6 +449,8 @@ function LogCallModal({t,client,me,onClose,onSaved,showToast}){
   const [location,setLocation]=useState(client.location||"");
   const [busyConf,setBusyConf]=useState(false);
   const [confirmed,setConfirmed]=useState(!!client.confirmed);
+  const [arming,setArming]=useState(false); // two-step confirm: first click arms
+  const armTimer=useRef(null);
 
   const changed = name!==(client.name||"") || city!==(client.city||"") || location!==(client.location||"");
 
@@ -456,8 +460,19 @@ function LogCallModal({t,client,me,onClose,onSaved,showToast}){
     window.open(waLink({...client,name}), "_blank");
   }
 
-  // STEP 1 — save edits (if any) and mark data confirmed
-  async function confirmData(){
+  // STEP 1 — two-step confirm. First click arms; second click within 4s finalizes.
+  function onConfirmClick(){
+    if(!arming){
+      setArming(true);
+      if(armTimer.current) clearTimeout(armTimer.current);
+      armTimer.current=setTimeout(()=>setArming(false),4000); // auto-reset if they hesitate
+      return;
+    }
+    if(armTimer.current) clearTimeout(armTimer.current);
+    setArming(false);
+    finalizeConfirm();
+  }
+  async function finalizeConfirm(){
     setBusyConf(true);
     const {error}=await sb.from("clients").update({
       name:name.trim(), city:city.trim(), location:location.trim(),
@@ -501,14 +516,15 @@ function LogCallModal({t,client,me,onClose,onSaved,showToast}){
         <div style={{border:"1px solid "+(confirmed?"var(--green)":"var(--line)"),borderRadius:12,padding:16,marginBottom:16}}>
           <div style={{fontSize:13,fontWeight:800,color:confirmed?"var(--green)":"var(--brand)",marginBottom:12}}>{t.step1}</div>
           <label className="fld" style={{marginBottom:10}}><span>{t.name}</span>
-            <input value={name} onChange={e=>{setName(e.target.value);setConfirmed(false);}}/></label>
+            <input value={name} onChange={e=>{setName(e.target.value);setConfirmed(false);setArming(false);}}/></label>
           <label className="fld" style={{marginBottom:10}}><span>{t.city}</span>
-            <input value={city} onChange={e=>{setCity(e.target.value);setConfirmed(false);}}/></label>
+            <input value={city} onChange={e=>{setCity(e.target.value);setConfirmed(false);setArming(false);}}/></label>
           <label className="fld" style={{marginBottom:12}}><span>{t.location}</span>
-            <textarea rows="2" value={location} onChange={e=>{setLocation(e.target.value);setConfirmed(false);}}></textarea></label>
-          <button className="btn-primary" style={{width:"100%",background:confirmed?"var(--green)":"var(--brand)"}}
-            disabled={busyConf} onClick={confirmData}>
-            {busyConf?t.saving:(confirmed && !changed? t.dataConfirmed : t.dataCorrect)}</button>
+            <textarea rows="2" value={location} onChange={e=>{setLocation(e.target.value);setConfirmed(false);setArming(false);}}></textarea></label>
+          <button className="btn-primary" style={{width:"100%",
+              background: confirmed? "var(--green)" : (arming? "var(--amber)" : "var(--brand)")}}
+            disabled={busyConf||(confirmed&&!changed)} onClick={onConfirmClick}>
+            {busyConf? t.saving : (confirmed && !changed? t.dataConfirmed : (arming? t.confirmSure : t.dataCorrect))}</button>
         </div>
 
         {/* ===== STEP 2: CALL ACTIVITY ===== */}
@@ -884,7 +900,13 @@ function AdminReports({t,showToast}){
       .select("*, clients(name,phone,city)")
       .eq("agent_id",agentId).gte("created_at",start).lte("created_at",end)
       .order("created_at",{ascending:true});
-    setLogs(data||[]);
+    const logsArr=data||[];
+    // fetch whatsapp sends by this agent in the same window, map by client_id
+    const {data:wa}=await sb.from("whatsapp_log")
+      .select("client_id, created_at")
+      .eq("agent_id",agentId).gte("created_at",start).lte("created_at",end);
+    const waMap={}; (wa||[]).forEach(w=>{ waMap[w.client_id]=w.created_at; });
+    setLogs(logsArr.map(l=>({...l, wa_at: waMap[l.client_id]||null})));
     const row=team.find(x=>x.agent_id===agentId);
     setProgress(row||null);
     setLoading(false);
@@ -907,11 +929,13 @@ function AdminReports({t,showToast}){
   function printPdf(){ window.print(); }
 
   function exportCsv(){
-    const rows=[["Date","Time","Agent","Client","Phone","City","Outcome","Feedback"]];
+    const rows=[["Date","Time","Agent","Client","Phone","City","Outcome","WhatsApp","Feedback"]];
     logs.forEach(l=>rows.push([
       new Date(l.created_at).toLocaleDateString(), new Date(l.created_at).toLocaleTimeString(),
       agent?.full_name||"", l.clients?.name||"", l.clients?.phone||"",
-      l.clients?.city||"", t.outcomes[l.outcome], (l.feedback||"").replace(/\n/g," ")
+      l.clients?.city||"", t.outcomes[l.outcome],
+      l.wa_at? "Sent "+new Date(l.wa_at).toLocaleString() : "No",
+      (l.feedback||"").replace(/\n/g," ")
     ]));
     const csv="\uFEFF"+rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(",")).join("\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
@@ -1007,6 +1031,7 @@ function AdminReports({t,showToast}){
           <div className="card mini"><div className="num" style={{color:"var(--teal)"}}>{counts.interested}</div><div className="lbl">{t.interestedC}</div></div>
           <div className="card mini"><div className="num" style={{color:"var(--pink)"}}>{interestRate}%</div><div className="lbl">{t.interestRate}</div></div>
           <div className="card mini"><div className="num" style={{color:"var(--amber)"}}>{counts.call_back}</div><div className="lbl">{t.outcomes.call_back}</div></div>
+          <div className="card mini"><div className="num" style={{color:"#25D366"}}>{logs.filter(l=>l.wa_at).length}</div><div className="lbl">{t.waSent}</div></div>
           {progress && <div className="card mini"><div className="num" style={{color:"var(--brand)"}}>{progress.assigned}</div><div className="lbl">{t.assignedN}</div></div>}
         </div>
 
@@ -1049,7 +1074,7 @@ function AdminReports({t,showToast}){
           {totalCalls===0? <div style={{padding:22,color:"var(--muted)"}}>{t.noCallsThatDay}</div> :
           <table>
             <thead><tr><th>{t.time}</th><th>{t.name}</th><th>{t.phone}</th>
-              <th>{t.city}</th><th>{t.outcome}</th><th>{t.feedback}</th></tr></thead>
+              <th>{t.city}</th><th>{t.outcome}</th><th>{t.waSent}</th><th>{t.feedback}</th></tr></thead>
             <tbody>
             {logs.map(l=>(
               <tr key={l.id}>
@@ -1059,6 +1084,9 @@ function AdminReports({t,showToast}){
                 <td>{l.clients?.phone}</td>
                 <td style={{color:"var(--muted)"}}>{l.clients?.city||"—"}</td>
                 <td><Pill outcome={l.outcome} t={t}/></td>
+                <td style={{fontSize:12,whiteSpace:"nowrap"}}>
+                  {l.wa_at? <span style={{color:"#25D366"}}>✓ {new Date(l.wa_at).toLocaleTimeString(t.dir==="rtl"?"ar-EG":"en-GB",{hour:"2-digit",minute:"2-digit"})}</span>
+                    : <span style={{color:"var(--muted)"}}>—</span>}</td>
                 <td style={{maxWidth:240,fontSize:13}}>{l.feedback||"—"}</td>
               </tr>
             ))}
