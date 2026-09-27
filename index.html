@@ -171,6 +171,9 @@ const T = {
     pass:"Pass", fail:"Needs review", minCalls:"Min calls", maxNa:"Max no-answers",
     belowCalls:"Below 50 calls", aboveNa:"Over 20 no-answers", auditDate:"Date",
     recycled:"Recycled", triedBy:"Already tried by", recycledFilter:"Recycled only",
+    myProgress:"My progress today", targetMet:"Target met 🎉", targetNotMet:"Target not met yet",
+    callsToday2:"Calls today", naToday:"No-answers today", toGo:"to go",
+    targetHint:"Target: at least 50 calls, no more than 20 no-answers.", overLimit:"over limit",
   },
   ar: {
     dir:"rtl", appName:"براذر كوند", tagline:"للتكييف · مركز الاتصال",
@@ -244,6 +247,9 @@ const T = {
     pass:"مطابق", fail:"يحتاج مراجعة", minCalls:"حد أدنى مكالمات", maxNa:"حد أقصى عدم رد",
     belowCalls:"أقل من 50 مكالمة", aboveNa:"أكثر من 20 عدم رد", auditDate:"التاريخ",
     recycled:"مُعاد", triedBy:"جرّبه من قبل", recycledFilter:"المُعاد فقط",
+    myProgress:"تقدّمي اليوم", targetMet:"تم تحقيق الهدف 🎉", targetNotMet:"لم يتحقق الهدف بعد",
+    callsToday2:"مكالمات اليوم", naToday:"عدم الرد اليوم", toGo:"متبقٍ",
+    targetHint:"المطلوب: 50 مكالمة على الأقل، و20 عدم رد كحد أقصى.", overLimit:"تجاوز الحد",
   }
 };
 
@@ -254,6 +260,7 @@ const OUTCOME_COLORS = {
 };
 const OUTCOME_KEYS = ["answered","no_answer","call_back","interested",
                       "not_interested","wrong_number","blacklisted"];
+const MIN_CALLS=50, MAX_NA=20; // daily targets: >=50 calls, <=20 no-answers
 
 /* ---------------- small helpers ---------------- */
 function useToast(){
@@ -631,11 +638,22 @@ function AgentView({t,me,showToast}){
   const [clients,setClients]=useState(null);
   const [q,setQ]=useState(""); const [cityF,setCityF]=useState(""); const [statF,setStatF]=useState("");
   const [logFor,setLogFor]=useState(null); const [histFor,setHistFor]=useState(null);
+  const [today,setToday]=useState({calls:0,na:0});
 
   const load=useCallback(async()=>{
     const {data}=await sb.from("clients").select("*")
       .eq("assigned_to",me.id).order("status",{ascending:true}).order("id");
     setClients(data||[]);
+    // today's call stats for this agent (Cairo day boundaries)
+    const now=new Date();
+    const cairo=new Date(now.toLocaleString("en-US",{timeZone:"Africa/Cairo"}));
+    const start=new Date(cairo); start.setHours(0,0,0,0);
+    const end=new Date(cairo); end.setHours(23,59,59,999);
+    const {data:logs}=await sb.from("call_logs").select("outcome")
+      .eq("agent_id",me.id).gte("created_at",start.toISOString()).lte("created_at",end.toISOString());
+    const calls=(logs||[]).length;
+    const na=(logs||[]).filter(l=>l.outcome==="no_answer").length;
+    setToday({calls,na});
   },[me.id]);
   useEffect(()=>{load();},[load]);
 
@@ -662,6 +680,46 @@ function AgentView({t,me,showToast}){
         </div>
         <button className="btn-ghost" onClick={load}>↻ {t.refresh}</button>
       </div>
+
+      {/* ===== MY DAILY PROGRESS ===== */}
+      {(()=>{
+        const okCalls=today.calls>=MIN_CALLS, okNa=today.na<=MAX_NA, met=okCalls&&okNa;
+        const callsLeft=Math.max(0,MIN_CALLS-today.calls);
+        const callPct=Math.min(100,Math.round(today.calls/MIN_CALLS*100));
+        const naPct=Math.min(100,Math.round(today.na/MAX_NA*100));
+        return (
+        <div className="card" style={{padding:18,border:"1px solid "+(met?"var(--green)":"var(--line)")}}>
+          <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:14}}>
+            <div style={{fontWeight:800}}>{t.myProgress}</div>
+            <span className="pill" style={{fontSize:13,fontWeight:700,
+              background:(met?"var(--green)":"var(--amber)")+"22",color:met?"var(--green)":"var(--amber)"}}>
+              {met? t.targetMet : t.targetNotMet}</span>
+          </div>
+          {/* calls bar */}
+          <div style={{marginBottom:14}}>
+            <div className="row" style={{justifyContent:"space-between",marginBottom:6}}>
+              <span style={{fontSize:13}}>{t.callsToday2}</span>
+              <span style={{fontSize:13,fontWeight:700,color:okCalls?"var(--green)":"var(--ink)"}}>
+                {today.calls} / {MIN_CALLS}{!okCalls && <span style={{color:"var(--muted)",fontWeight:400}}> · {callsLeft} {t.toGo}</span>}</span>
+            </div>
+            <div style={{height:10,background:"var(--panel2)",borderRadius:6,overflow:"hidden"}}>
+              <div style={{width:callPct+"%",height:"100%",background:okCalls?"var(--green)":"var(--brand)"}}></div>
+            </div>
+          </div>
+          {/* no-answer bar */}
+          <div>
+            <div className="row" style={{justifyContent:"space-between",marginBottom:6}}>
+              <span style={{fontSize:13}}>{t.naToday}</span>
+              <span style={{fontSize:13,fontWeight:700,color:okNa?"var(--ink)":"var(--red)"}}>
+                {today.na} / {MAX_NA}{!okNa && <span style={{fontWeight:400}}> · {t.overLimit}</span>}</span>
+            </div>
+            <div style={{height:10,background:"var(--panel2)",borderRadius:6,overflow:"hidden"}}>
+              <div style={{width:naPct+"%",height:"100%",background:okNa?"var(--amber)":"var(--red)"}}></div>
+            </div>
+          </div>
+          <div style={{fontSize:11.5,color:"var(--muted)",marginTop:12}}>{t.targetHint}</div>
+        </div>);
+      })()}
 
       <div className="card" style={{padding:14}}>
         <div className="grid" style={{gridTemplateColumns:"2fr 1fr 1fr",gap:10}}>
@@ -909,7 +967,6 @@ function Donut({data,size=150}){
 
 /* ==================== ADMIN: REPORTS ==================== */
 /* ===== DAILY AUDIT PANEL (min 50 calls / max 20 no-answers) ===== */
-const MIN_CALLS=50, MAX_NA=20;
 function AuditPanel({t}){
   const [day,setDay]=useState(()=>new Date().toISOString().slice(0,10));
   const [rows,setRows]=useState(null);
