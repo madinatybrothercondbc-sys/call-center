@@ -167,9 +167,9 @@ const T = {
     confirmSure:"Are you sure? Tap again to confirm",
     saveFailed:"⚠️ NOT SAVED — please try again. Check your internet and retry.",
     saveVerifying:"Saving…",
-    dailyAudit:"Daily audit", auditRule:"Target: min 50 calls · max 20 no-answers",
+    dailyAudit:"Daily audit", auditRule:"Target: min 50 total calls · min 30 answered",
     pass:"Pass", fail:"Needs review", minCalls:"Min calls", maxNa:"Max no-answers",
-    belowCalls:"Below 50 calls", aboveNa:"Over 20 no-answers", auditDate:"Date",
+    belowCalls:"Below 50", aboveNa:"Over 20 no-answers", auditDate:"Date", belowAns:"Below 30",
     recycled:"Recycled", triedBy:"Already tried by", recycledFilter:"Recycled only",
     myProgress:"My progress today", targetMet:"Target met 🎉", targetNotMet:"Target not met yet",
     callsToday2:"Calls today", naToday:"No-answers today", toGo:"to go",
@@ -177,8 +177,10 @@ const T = {
     leaderboard:"Leaderboard", thisMonth:"This month", points:"points", sales:"sales",
     myPoints:"My points", myBadges:"My badges", rank:"Rank", noSalesYet:"No sales yet this month.",
     badgeFirst:"First sale", badge5:"5 sales", badge10:"10 sales", badgeTop:"Top of the month",
-    callsLeftBig:"more calls to reach your target", targetDoneBig:"You hit your call target! 🎉",
+    callsLeftBig:"more calls to reach your target", targetDoneBig:"You hit your daily target! 🎉",
     naWarnBig:"Careful — you're near the no-answer limit.", naOverBig:"You're over the no-answer limit.",
+    callsLeftLabel:"more calls", ansLeftLabel:"more answered", answeredToday:"Answered today",
+    naTodayInfo:"No-answers today", targetHint2:"Target: at least 50 total calls AND 30 answered calls.",
   },
   ar: {
     dir:"rtl", appName:"براذر كوند", tagline:"للتكييف · مركز الاتصال",
@@ -248,9 +250,9 @@ const T = {
     confirmSure:"هل أنت متأكد؟ اضغط مرة أخرى للتأكيد",
     saveFailed:"⚠️ لم يتم الحفظ — برجاء المحاولة مرة أخرى. تأكد من الإنترنت وأعد المحاولة.",
     saveVerifying:"جارٍ الحفظ…",
-    dailyAudit:"التدقيق اليومي", auditRule:"المطلوب: 50 مكالمة كحد أدنى · 20 عدم رد كحد أقصى",
+    dailyAudit:"التدقيق اليومي", auditRule:"المطلوب: 50 مكالمة إجمالاً · 30 تم الرد عليها كحد أدنى",
     pass:"مطابق", fail:"يحتاج مراجعة", minCalls:"حد أدنى مكالمات", maxNa:"حد أقصى عدم رد",
-    belowCalls:"أقل من 50 مكالمة", aboveNa:"أكثر من 20 عدم رد", auditDate:"التاريخ",
+    belowCalls:"أقل من 50", aboveNa:"أكثر من 20 عدم رد", auditDate:"التاريخ", belowAns:"أقل من 30",
     recycled:"مُعاد", triedBy:"جرّبه من قبل", recycledFilter:"المُعاد فقط",
     myProgress:"تقدّمي اليوم", targetMet:"تم تحقيق الهدف 🎉", targetNotMet:"لم يتحقق الهدف بعد",
     callsToday2:"مكالمات اليوم", naToday:"عدم الرد اليوم", toGo:"متبقٍ",
@@ -258,8 +260,10 @@ const T = {
     leaderboard:"لوحة المتصدرين", thisMonth:"هذا الشهر", points:"نقطة", sales:"مبيعات",
     myPoints:"نقاطي", myBadges:"أوسمتي", rank:"الترتيب", noSalesYet:"لا مبيعات هذا الشهر بعد.",
     badgeFirst:"أول بيعة", badge5:"5 مبيعات", badge10:"10 مبيعات", badgeTop:"متصدر الشهر",
-    callsLeftBig:"مكالمة متبقية للوصول إلى هدفك", targetDoneBig:"لقد حققت هدف المكالمات! 🎉",
+    callsLeftBig:"مكالمة متبقية للوصول إلى هدفك", targetDoneBig:"لقد حققت هدفك اليومي! 🎉",
     naWarnBig:"انتبه — أنت قريب من حد عدم الرد.", naOverBig:"لقد تجاوزت حد عدم الرد.",
+    callsLeftLabel:"مكالمة متبقية", ansLeftLabel:"رد متبقٍ", answeredToday:"تم الرد اليوم",
+    naTodayInfo:"عدم الرد اليوم", targetHint2:"الهدف: 50 مكالمة إجمالاً على الأقل + 30 مكالمة تم الرد عليها.",
   }
 };
 
@@ -271,7 +275,7 @@ const OUTCOME_COLORS = {
 };
 const OUTCOME_KEYS = ["answered","no_answer","call_back","interested",
                       "not_interested","wrong_number","blacklisted","closed_won"];
-const MIN_CALLS=50, MAX_NA=20; // daily targets: >=50 calls, <=20 no-answers
+const MIN_CALLS=50, MIN_ANSWERED=30; // daily target: >=50 total calls AND >=30 answered (non-no-answer) calls
 
 /* ---------------- small helpers ---------------- */
 function useToast(){
@@ -724,7 +728,7 @@ function AgentView({t,me,showToast}){
   const [clients,setClients]=useState(null);
   const [q,setQ]=useState(""); const [cityF,setCityF]=useState(""); const [statF,setStatF]=useState("");
   const [logFor,setLogFor]=useState(null); const [histFor,setHistFor]=useState(null);
-  const [today,setToday]=useState({calls:0,na:0});
+  const [today,setToday]=useState({calls:0,na:0,answered:0});
   const [view,setView]=useState("calls"); // "calls" | "board"
 
   const load=useCallback(async()=>{
@@ -740,7 +744,8 @@ function AgentView({t,me,showToast}){
       .eq("agent_id",me.id).gte("created_at",start.toISOString()).lte("created_at",end.toISOString());
     const calls=(logs||[]).length;
     const na=(logs||[]).filter(l=>l.outcome==="no_answer").length;
-    setToday({calls,na});
+    const answered=calls-na; // everything except no-answer counts as answered
+    setToday({calls,na,answered});
   },[me.id]);
   useEffect(()=>{load();},[load]);
 
@@ -776,10 +781,11 @@ function AgentView({t,me,showToast}){
 
       {/* ===== MY DAILY PROGRESS ===== */}
       {(()=>{
-        const okCalls=today.calls>=MIN_CALLS, okNa=today.na<=MAX_NA, met=okCalls&&okNa;
+        const okCalls=today.calls>=MIN_CALLS, okAns=today.answered>=MIN_ANSWERED, met=okCalls&&okAns;
         const callsLeft=Math.max(0,MIN_CALLS-today.calls);
+        const ansLeft=Math.max(0,MIN_ANSWERED-today.answered);
         const callPct=Math.min(100,Math.round(today.calls/MIN_CALLS*100));
-        const naPct=Math.min(100,Math.round(today.na/MAX_NA*100));
+        const ansPct=Math.min(100,Math.round(today.answered/MIN_ANSWERED*100));
         return (
         <div className="card" style={{padding:18,border:"1px solid "+(met?"var(--green)":"var(--line)")}}>
           <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:14}}>
@@ -789,16 +795,20 @@ function AgentView({t,me,showToast}){
               {met? t.targetMet : t.targetNotMet}</span>
           </div>
 
-          {/* BIG "calls left" banner */}
+          {/* BIG remaining banner: shows whichever part still needs work */}
           <div style={{textAlign:"center",padding:"14px 12px",borderRadius:12,marginBottom:16,
-            background:(okCalls?"var(--green)":"var(--brand)")+"18"}}>
-            {okCalls
+            background:(met?"var(--green)":"var(--brand)")+"18"}}>
+            {met
               ? <div style={{fontSize:18,fontWeight:800,color:"var(--green)"}}>{t.targetDoneBig}</div>
-              : <div><span style={{fontSize:40,fontWeight:800,color:"var(--brand)",lineHeight:1}}>{callsLeft}</span>
-                  <div style={{fontSize:14,fontWeight:600,color:"var(--muted)",marginTop:4}}>{t.callsLeftBig}</div></div>}
+              : <div className="row" style={{justifyContent:"center",gap:24,flexWrap:"wrap"}}>
+                  <div><span style={{fontSize:38,fontWeight:800,color:okCalls?"var(--green)":"var(--brand)",lineHeight:1}}>{callsLeft}</span>
+                    <div style={{fontSize:12.5,fontWeight:600,color:"var(--muted)",marginTop:3}}>{t.callsLeftLabel}</div></div>
+                  <div><span style={{fontSize:38,fontWeight:800,color:okAns?"var(--green)":"var(--teal)",lineHeight:1}}>{ansLeft}</span>
+                    <div style={{fontSize:12.5,fontWeight:600,color:"var(--muted)",marginTop:3}}>{t.ansLeftLabel}</div></div>
+                </div>}
           </div>
 
-          {/* calls bar */}
+          {/* total calls bar */}
           <div style={{marginBottom:14}}>
             <div className="row" style={{justifyContent:"space-between",marginBottom:6}}>
               <span style={{fontSize:13}}>{t.callsToday2}</span>
@@ -809,21 +819,19 @@ function AgentView({t,me,showToast}){
               <div style={{width:callPct+"%",height:"100%",background:okCalls?"var(--green)":"var(--brand)"}}></div>
             </div>
           </div>
-          {/* no-answer bar */}
+          {/* answered bar */}
           <div>
             <div className="row" style={{justifyContent:"space-between",marginBottom:6}}>
-              <span style={{fontSize:13}}>{t.naToday}</span>
-              <span style={{fontSize:13,fontWeight:700,color:okNa?"var(--ink)":"var(--red)"}}>
-                {today.na} / {MAX_NA}{!okNa && <span style={{fontWeight:400}}> · {t.overLimit}</span>}</span>
+              <span style={{fontSize:13}}>{t.answeredToday}</span>
+              <span style={{fontSize:13,fontWeight:700,color:okAns?"var(--green)":"var(--ink)"}}>
+                {today.answered} / {MIN_ANSWERED}{!okAns && <span style={{color:"var(--muted)",fontWeight:400}}> · {ansLeft} {t.toGo}</span>}</span>
             </div>
             <div style={{height:10,background:"var(--panel2)",borderRadius:6,overflow:"hidden"}}>
-              <div style={{width:naPct+"%",height:"100%",background:okNa?"var(--amber)":"var(--red)"}}></div>
+              <div style={{width:ansPct+"%",height:"100%",background:okAns?"var(--green)":"var(--teal)"}}></div>
             </div>
-            {!okNa && <div style={{fontSize:12.5,fontWeight:700,color:"var(--red)",marginTop:6}}>⚠ {t.naOverBig}</div>}
-            {okNa && today.na>=MAX_NA-3 && today.na>0 &&
-              <div style={{fontSize:12,color:"var(--amber)",marginTop:6}}>{t.naWarnBig}</div>}
+            <div style={{fontSize:11,color:"var(--muted)",marginTop:6}}>{t.naTodayInfo}: {today.na}</div>
           </div>
-          <div style={{fontSize:11.5,color:"var(--muted)",marginTop:12}}>{t.targetHint}</div>
+          <div style={{fontSize:11.5,color:"var(--muted)",marginTop:12}}>{t.targetHint2}</div>
         </div>);
       })()}
 
@@ -1097,18 +1105,20 @@ function AuditPanel({t}){
        rows.length===0? <div style={{padding:22,color:"var(--muted)"}}>{t.noData}</div> :
       <table>
         <thead><tr>
-          <th>{t.agentName}</th><th>{t.callsMade}</th><th>{t.outcomes.no_answer}</th><th>{t.status}</th>
+          <th>{t.agentName}</th><th>{t.callsMade}</th><th>{t.answeredToday}</th><th>{t.outcomes.no_answer}</th><th>{t.status}</th>
         </tr></thead>
         <tbody>
         {rows.map(r=>{
-          const okCalls=r.calls>=MIN_CALLS, okNa=r.no_answers<=MAX_NA, pass=okCalls&&okNa;
+          const answered=r.calls-r.no_answers; // all except no-answer
+          const okCalls=r.calls>=MIN_CALLS, okAns=answered>=MIN_ANSWERED, pass=okCalls&&okAns;
           return (
           <tr key={r.agent_id}>
             <td style={{fontWeight:600}}>{r.full_name}</td>
             <td style={{color:okCalls?"var(--green)":"var(--red)",fontWeight:700}}>
               {r.calls}{!okCalls && <span style={{fontSize:11,fontWeight:400}}> · {t.belowCalls}</span>}</td>
-            <td style={{color:okNa?"var(--ink)":"var(--red)",fontWeight:okNa?400:700}}>
-              {r.no_answers}{!okNa && <span style={{fontSize:11,fontWeight:400}}> · {t.aboveNa}</span>}</td>
+            <td style={{color:okAns?"var(--green)":"var(--red)",fontWeight:700}}>
+              {answered}{!okAns && <span style={{fontSize:11,fontWeight:400}}> · {t.belowAns}</span>}</td>
+            <td style={{color:"var(--muted)"}}>{r.no_answers}</td>
             <td>
               <span className="pill" style={{fontSize:12,
                 background:(pass?"var(--green)":"var(--red)")+"22",
