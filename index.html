@@ -167,6 +167,9 @@ const T = {
     confirmSure:"Are you sure? Tap again to confirm",
     saveFailed:"⚠️ NOT SAVED — please try again. Check your internet and retry.",
     saveVerifying:"Saving…",
+    dailyAudit:"Daily audit", auditRule:"Target: min 50 calls · max 20 no-answers",
+    pass:"Pass", fail:"Needs review", minCalls:"Min calls", maxNa:"Max no-answers",
+    belowCalls:"Below 50 calls", aboveNa:"Over 20 no-answers", auditDate:"Date",
   },
   ar: {
     dir:"rtl", appName:"براذر كوند", tagline:"للتكييف · مركز الاتصال",
@@ -236,6 +239,9 @@ const T = {
     confirmSure:"هل أنت متأكد؟ اضغط مرة أخرى للتأكيد",
     saveFailed:"⚠️ لم يتم الحفظ — برجاء المحاولة مرة أخرى. تأكد من الإنترنت وأعد المحاولة.",
     saveVerifying:"جارٍ الحفظ…",
+    dailyAudit:"التدقيق اليومي", auditRule:"المطلوب: 50 مكالمة كحد أدنى · 20 عدم رد كحد أقصى",
+    pass:"مطابق", fail:"يحتاج مراجعة", minCalls:"حد أدنى مكالمات", maxNa:"حد أقصى عدم رد",
+    belowCalls:"أقل من 50 مكالمة", aboveNa:"أكثر من 20 عدم رد", auditDate:"التاريخ",
   }
 };
 
@@ -817,9 +823,11 @@ function AdminAssign({t,showToast}){
       .is("assigned_to",null).eq("do_not_call",false);
     if(onlyNew) query=query.eq("status","new");
     if(city) query=query.eq("city",city);
+    // exclude clients this agent already tried (recycled away from them)
+    if(agentId) query=query.not("tried_agents","cs","{"+agentId+"}");
     const {count:c}=await query;
     setAvail(c||0);
-  },[city,onlyNew]);
+  },[city,onlyNew,agentId]);
   useEffect(()=>{checkAvail();},[checkAvail]);
 
   async function assign(){
@@ -828,6 +836,8 @@ function AdminAssign({t,showToast}){
     let query=sb.from("clients").select("id").is("assigned_to",null).eq("do_not_call",false);
     if(onlyNew) query=query.eq("status","new");
     if(city) query=query.eq("city",city);
+    // never re-assign a client to an agent who already failed it 3x
+    query=query.not("tried_agents","cs","{"+agentId+"}");
     query=query.limit(count);
     const {data:rows,error}=await query;
     if(error){ setBusy(false); showToast(error.message,true); return; }
@@ -889,6 +899,57 @@ function Donut({data,size=150}){
 }
 
 /* ==================== ADMIN: REPORTS ==================== */
+/* ===== DAILY AUDIT PANEL (min 50 calls / max 20 no-answers) ===== */
+const MIN_CALLS=50, MAX_NA=20;
+function AuditPanel({t}){
+  const [day,setDay]=useState(()=>new Date().toISOString().slice(0,10));
+  const [rows,setRows]=useState(null);
+  useEffect(()=>{(async()=>{
+    setRows(null);
+    const {data}=await sb.from("daily_audit").select("*").eq("day",day)
+      .order("calls",{ascending:false});
+    setRows(data||[]);
+  })();},[day]);
+  return (
+    <div className="card no-print" style={{overflow:"auto"}}>
+      <div className="row" style={{justifyContent:"space-between",alignItems:"center",
+        padding:"14px 18px",borderBottom:"1px solid var(--line)",flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontWeight:700}}>📋 {t.dailyAudit}</div>
+          <div style={{fontSize:12,color:"var(--muted)"}}>{t.auditRule}</div>
+        </div>
+        <input type="date" value={day} onChange={e=>setDay(e.target.value)} style={{width:"auto"}}/>
+      </div>
+      {rows===null? <div className="spin"></div> :
+       rows.length===0? <div style={{padding:22,color:"var(--muted)"}}>{t.noData}</div> :
+      <table>
+        <thead><tr>
+          <th>{t.agentName}</th><th>{t.callsMade}</th><th>{t.outcomes.no_answer}</th><th>{t.status}</th>
+        </tr></thead>
+        <tbody>
+        {rows.map(r=>{
+          const okCalls=r.calls>=MIN_CALLS, okNa=r.no_answers<=MAX_NA, pass=okCalls&&okNa;
+          return (
+          <tr key={r.agent_id}>
+            <td style={{fontWeight:600}}>{r.full_name}</td>
+            <td style={{color:okCalls?"var(--green)":"var(--red)",fontWeight:700}}>
+              {r.calls}{!okCalls && <span style={{fontSize:11,fontWeight:400}}> · {t.belowCalls}</span>}</td>
+            <td style={{color:okNa?"var(--ink)":"var(--red)",fontWeight:okNa?400:700}}>
+              {r.no_answers}{!okNa && <span style={{fontSize:11,fontWeight:400}}> · {t.aboveNa}</span>}</td>
+            <td>
+              <span className="pill" style={{fontSize:12,
+                background:(pass?"var(--green)":"var(--red)")+"22",
+                color:pass?"var(--green)":"var(--red)"}}>
+                {pass? "✓ "+t.pass : "⚠ "+t.fail}</span>
+            </td>
+          </tr>);
+        })}
+        </tbody>
+      </table>}
+    </div>
+  );
+}
+
 function AdminReports({t,showToast}){
   const [agents,setAgents]=useState([]);
   const [team,setTeam]=useState([]);
@@ -972,6 +1033,9 @@ function AdminReports({t,showToast}){
   return (
     <div className="grid" style={{gap:18}}>
       <div style={{fontSize:20,fontWeight:800}}>{t.reports}</div>
+
+      {/* ===== DAILY AUDIT (50/20 rule) ===== */}
+      <AuditPanel t={t}/>
 
       {/* ===== TEAM OVERVIEW ===== */}
       <div className="card no-print" style={{overflow:"auto"}}>
