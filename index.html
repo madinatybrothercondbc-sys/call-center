@@ -170,6 +170,7 @@ const T = {
     dailyAudit:"Daily audit", auditRule:"Target: min 50 calls · max 20 no-answers",
     pass:"Pass", fail:"Needs review", minCalls:"Min calls", maxNa:"Max no-answers",
     belowCalls:"Below 50 calls", aboveNa:"Over 20 no-answers", auditDate:"Date",
+    recycled:"Recycled", triedBy:"Already tried by", recycledFilter:"Recycled only",
   },
   ar: {
     dir:"rtl", appName:"براذر كوند", tagline:"للتكييف · مركز الاتصال",
@@ -242,6 +243,7 @@ const T = {
     dailyAudit:"التدقيق اليومي", auditRule:"المطلوب: 50 مكالمة كحد أدنى · 20 عدم رد كحد أقصى",
     pass:"مطابق", fail:"يحتاج مراجعة", minCalls:"حد أدنى مكالمات", maxNa:"حد أقصى عدم رد",
     belowCalls:"أقل من 50 مكالمة", aboveNa:"أكثر من 20 عدم رد", auditDate:"التاريخ",
+    recycled:"مُعاد", triedBy:"جرّبه من قبل", recycledFilter:"المُعاد فقط",
   }
 };
 
@@ -1498,15 +1500,25 @@ function AdminCustomers({t,showToast}){
         {rows.length===0 && !loading? <div style={{padding:40,textAlign:"center",color:"var(--muted)"}}>{t.noCustomers}</div> :
         <table>
           <thead><tr><th>{t.name}</th><th>{t.phone}</th><th>{t.city}</th>
-            <th>{t.status}</th><th>{t.assignedAgent}</th><th>{t.waSent}</th><th>{t.confirmed}</th><th style={{textAlign:"end"}}>{t.actions}</th></tr></thead>
+            <th>{t.status}</th><th>{t.assignedAgent}</th><th>{t.recycled}</th><th>{t.waSent}</th><th>{t.confirmed}</th><th style={{textAlign:"end"}}>{t.actions}</th></tr></thead>
           <tbody>
-          {rows.map(c=>(
+          {rows.map(c=>{
+            const tried=(c.tried_agents||[]).map(id=>{
+              const a=agents.find(x=>x.id===id); return a?a.full_name:"?";
+            });
+            return (
             <tr key={c.id}>
               <td style={{fontWeight:600}}>{c.name||"—"}</td>
               <td><a href={"tel:"+c.phone} style={{textDecoration:"none"}}>{c.phone}</a></td>
               <td style={{color:"var(--muted)"}}>{c.city||"—"}</td>
               <td><Pill outcome={c.status} t={t}/></td>
               <td style={{color:"var(--muted)"}}>{c.profiles?.full_name||"—"}</td>
+              <td style={{fontSize:12}}>
+                {tried.length>0
+                  ? <span title={t.triedBy+": "+tried.join(", ")}
+                      className="pill" style={{background:"var(--amber)22",color:"var(--amber)",fontSize:11}}>
+                      ♻ {tried.length}</span>
+                  : <span style={{color:"var(--muted)"}}>—</span>}</td>
               <td style={{fontSize:12}}>
                 {c.wa? <span title={t.waBy+": "+(c.wa.wa_agent||"")+" · "+fmtDate(c.wa.wa_at,t.dir)}
                   style={{color:"#25D366"}}>💬 {fmtDate(c.wa.wa_at,t.dir)}</span>
@@ -1522,8 +1534,8 @@ function AdminCustomers({t,showToast}){
                 <button className="btn-ghost" style={{padding:"5px 9px",color:"var(--red)",borderColor:"var(--red)44"}}
                   onClick={()=>del(c)} title={t.deleteClient}>🗑</button>
               </td>
-            </tr>
-          ))}
+            </tr>);
+          })}
           </tbody>
         </table>}
         {loading && <div className="spin" style={{margin:"20px auto"}}></div>}
