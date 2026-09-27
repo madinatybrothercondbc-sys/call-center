@@ -121,7 +121,7 @@ const T = {
     callNow:"Call", markResult:"Log result for", perAgent:"Per-agent performance",
     outcomes:{answered:"Answered",no_answer:"No answer",call_back:"Call back",
       interested:"Interested",not_interested:"Not interested",
-      wrong_number:"Wrong number",blacklisted:"Blacklisted",new:"New"},
+      wrong_number:"Wrong number",blacklisted:"Blacklisted",new:"New",closed_won:"Closed Won 🏆"},
     exportCsv:"Export CSV", callbacksToday:"Callbacks due today",
     noCallbacks:"No callbacks scheduled.", welcome:"Welcome back",
     remaining:"remaining", done:"done", loginErr:"Wrong email or password.",
@@ -174,6 +174,11 @@ const T = {
     myProgress:"My progress today", targetMet:"Target met 🎉", targetNotMet:"Target not met yet",
     callsToday2:"Calls today", naToday:"No-answers today", toGo:"to go",
     targetHint:"Target: at least 50 calls, no more than 20 no-answers.", overLimit:"over limit",
+    leaderboard:"Leaderboard", thisMonth:"This month", points:"points", sales:"sales",
+    myPoints:"My points", myBadges:"My badges", rank:"Rank", noSalesYet:"No sales yet this month.",
+    badgeFirst:"First sale", badge5:"5 sales", badge10:"10 sales", badgeTop:"Top of the month",
+    callsLeftBig:"more calls to reach your target", targetDoneBig:"You hit your call target! 🎉",
+    naWarnBig:"Careful — you're near the no-answer limit.", naOverBig:"You're over the no-answer limit.",
   },
   ar: {
     dir:"rtl", appName:"براذر كوند", tagline:"للتكييف · مركز الاتصال",
@@ -197,7 +202,7 @@ const T = {
     callNow:"اتصال", markResult:"تسجيل نتيجة", perAgent:"أداء الموظفين",
     outcomes:{answered:"تم الرد",no_answer:"لم يرد",call_back:"معاودة",
       interested:"مهتم",not_interested:"غير مهتم",
-      wrong_number:"رقم خطأ",blacklisted:"قائمة سوداء",new:"جديد"},
+      wrong_number:"رقم خطأ",blacklisted:"قائمة سوداء",new:"جديد",closed_won:"تم البيع 🏆"},
     exportCsv:"تصدير CSV", callbacksToday:"معاودات اليوم",
     noCallbacks:"لا توجد معاودات مجدولة.", welcome:"أهلاً بعودتك",
     remaining:"متبقٍ", done:"مكتمل", loginErr:"بريد أو كلمة مرور خاطئة.",
@@ -250,16 +255,22 @@ const T = {
     myProgress:"تقدّمي اليوم", targetMet:"تم تحقيق الهدف 🎉", targetNotMet:"لم يتحقق الهدف بعد",
     callsToday2:"مكالمات اليوم", naToday:"عدم الرد اليوم", toGo:"متبقٍ",
     targetHint:"المطلوب: 50 مكالمة على الأقل، و20 عدم رد كحد أقصى.", overLimit:"تجاوز الحد",
+    leaderboard:"لوحة المتصدرين", thisMonth:"هذا الشهر", points:"نقطة", sales:"مبيعات",
+    myPoints:"نقاطي", myBadges:"أوسمتي", rank:"الترتيب", noSalesYet:"لا مبيعات هذا الشهر بعد.",
+    badgeFirst:"أول بيعة", badge5:"5 مبيعات", badge10:"10 مبيعات", badgeTop:"متصدر الشهر",
+    callsLeftBig:"مكالمة متبقية للوصول إلى هدفك", targetDoneBig:"لقد حققت هدف المكالمات! 🎉",
+    naWarnBig:"انتبه — أنت قريب من حد عدم الرد.", naOverBig:"لقد تجاوزت حد عدم الرد.",
   }
 };
 
 const OUTCOME_COLORS = {
   answered:"var(--green)", no_answer:"var(--slate)", call_back:"var(--amber)",
   interested:"var(--teal)", not_interested:"var(--muted)",
-  wrong_number:"var(--violet)", blacklisted:"var(--red)", new:"var(--brand)"
+  wrong_number:"var(--violet)", blacklisted:"var(--red)", new:"var(--brand)",
+  closed_won:"#d4af37"
 };
 const OUTCOME_KEYS = ["answered","no_answer","call_back","interested",
-                      "not_interested","wrong_number","blacklisted"];
+                      "not_interested","wrong_number","blacklisted","closed_won"];
 const MIN_CALLS=50, MAX_NA=20; // daily targets: >=50 calls, <=20 no-answers
 
 /* ---------------- small helpers ---------------- */
@@ -390,6 +401,81 @@ function SearchSelect({value,onChange,options,placeholder,allLabel}){
           {filtered.length===0 && <div style={{padding:"9px 14px",color:"var(--muted)",fontSize:13}}>—</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ==================== LEADERBOARD + BADGES ==================== */
+function badgesFor(totalSales, isTopMonth, t){
+  const b=[];
+  if(totalSales>=1) b.push({icon:"🥉",label:t.badgeFirst});
+  if(totalSales>=5) b.push({icon:"🔥",label:t.badge5});
+  if(totalSales>=10) b.push({icon:"🏆",label:t.badge10});
+  if(isTopMonth) b.push({icon:"👑",label:t.badgeTop});
+  return b;
+}
+function Leaderboard({t,me}){
+  const [rows,setRows]=useState(null);
+  const [myTotal,setMyTotal]=useState(0);
+  useEffect(()=>{(async()=>{
+    const {data}=await sb.from("leaderboard").select("*").order("points",{ascending:false});
+    setRows(data||[]);
+    const {data:tot}=await sb.from("agent_sales_total").select("*").eq("agent_id",me.id).maybeSingle();
+    setMyTotal(tot?tot.total_sales:0);
+  })();},[me.id]);
+  if(rows===null) return <div className="spin"></div>;
+  const topId = rows.length && rows[0].points>0 ? rows[0].agent_id : null;
+  const myRow = rows.find(r=>r.agent_id===me.id);
+  const myRank = myRow ? rows.filter(r=>r.points>myRow.points).length+1 : null;
+  const myBadges = badgesFor(myTotal, topId===me.id, t);
+  return (
+    <div className="grid" style={{gap:16}}>
+      {/* my summary (agents especially) */}
+      <div className="card" style={{padding:18}}>
+        <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={{fontSize:12,color:"var(--muted)",fontWeight:600}}>{t.myPoints} · {t.thisMonth}</div>
+            <div style={{fontSize:30,fontWeight:800,color:"#d4af37"}}>{myRow?myRow.points:0}
+              <span style={{fontSize:14,color:"var(--muted)",fontWeight:600}}> {t.points}</span></div>
+          </div>
+          {myRank && <div style={{textAlign:"center"}}>
+            <div style={{fontSize:12,color:"var(--muted)",fontWeight:600}}>{t.rank}</div>
+            <div style={{fontSize:26,fontWeight:800}}>#{myRank}</div></div>}
+          <div style={{textAlign:"end"}}>
+            <div style={{fontSize:12,color:"var(--muted)",fontWeight:600,marginBottom:4}}>{t.myBadges}</div>
+            <div className="row" style={{gap:6,justifyContent:"flex-end"}}>
+              {myBadges.length? myBadges.map((b,i)=>
+                <span key={i} title={b.label} style={{fontSize:22}}>{b.icon}</span>)
+                : <span style={{color:"var(--muted)",fontSize:13}}>—</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* leaderboard table */}
+      <div className="card" style={{overflow:"auto"}}>
+        <div style={{padding:"14px 18px",fontWeight:700,borderBottom:"1px solid var(--line)"}}>
+          🏆 {t.leaderboard} · {t.thisMonth}</div>
+        {rows.length===0 || rows.every(r=>r.points===0)?
+          <div style={{padding:22,color:"var(--muted)"}}>{t.noSalesYet}</div> :
+        <table>
+          <thead><tr><th>#</th><th>{t.agentName}</th><th>{t.sales}</th><th>{t.points}</th><th></th></tr></thead>
+          <tbody>
+          {rows.filter(r=>r.points>0).map((r,i)=>{
+            const mine=r.agent_id===me.id;
+            return (
+            <tr key={r.agent_id} style={mine?{background:"#d4af3722"}:{}}>
+              <td style={{fontWeight:800,color:i===0?"#d4af37":"var(--ink)"}}>
+                {i===0?"👑":i+1}</td>
+              <td style={{fontWeight:600}}>{r.full_name}{mine?" ("+t.myPoints.split(" ")[0]+")":""}</td>
+              <td>{r.sales}</td>
+              <td style={{fontWeight:700,color:"#d4af37"}}>{r.points}</td>
+              <td style={{fontSize:16}}>{i===0?"👑":i===1?"🥈":i===2?"🥉":""}</td>
+            </tr>);
+          })}
+          </tbody>
+        </table>}
+      </div>
     </div>
   );
 }
@@ -639,6 +725,7 @@ function AgentView({t,me,showToast}){
   const [q,setQ]=useState(""); const [cityF,setCityF]=useState(""); const [statF,setStatF]=useState("");
   const [logFor,setLogFor]=useState(null); const [histFor,setHistFor]=useState(null);
   const [today,setToday]=useState({calls:0,na:0});
+  const [view,setView]=useState("calls"); // "calls" | "board"
 
   const load=useCallback(async()=>{
     const {data}=await sb.from("clients").select("*")
@@ -672,6 +759,12 @@ function AgentView({t,me,showToast}){
 
   return (
     <div className="grid" style={{gap:16}}>
+      <div className="tabbar" style={{maxWidth:360}}>
+        <button className={view==="calls"?"active":""} onClick={()=>setView("calls")}>{t.myCalls}</button>
+        <button className={view==="board"?"active":""} onClick={()=>setView("board")}>🏆 {t.leaderboard}</button>
+      </div>
+
+      {view==="board" ? <Leaderboard t={t} me={me}/> : <>
       <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
         <div>
           <div style={{fontSize:13,color:"var(--muted)"}}>{t.welcome}, {me.full_name}</div>
@@ -695,6 +788,16 @@ function AgentView({t,me,showToast}){
               background:(met?"var(--green)":"var(--amber)")+"22",color:met?"var(--green)":"var(--amber)"}}>
               {met? t.targetMet : t.targetNotMet}</span>
           </div>
+
+          {/* BIG "calls left" banner */}
+          <div style={{textAlign:"center",padding:"14px 12px",borderRadius:12,marginBottom:16,
+            background:(okCalls?"var(--green)":"var(--brand)")+"18"}}>
+            {okCalls
+              ? <div style={{fontSize:18,fontWeight:800,color:"var(--green)"}}>{t.targetDoneBig}</div>
+              : <div><span style={{fontSize:40,fontWeight:800,color:"var(--brand)",lineHeight:1}}>{callsLeft}</span>
+                  <div style={{fontSize:14,fontWeight:600,color:"var(--muted)",marginTop:4}}>{t.callsLeftBig}</div></div>}
+          </div>
+
           {/* calls bar */}
           <div style={{marginBottom:14}}>
             <div className="row" style={{justifyContent:"space-between",marginBottom:6}}>
@@ -716,6 +819,9 @@ function AgentView({t,me,showToast}){
             <div style={{height:10,background:"var(--panel2)",borderRadius:6,overflow:"hidden"}}>
               <div style={{width:naPct+"%",height:"100%",background:okNa?"var(--amber)":"var(--red)"}}></div>
             </div>
+            {!okNa && <div style={{fontSize:12.5,fontWeight:700,color:"var(--red)",marginTop:6}}>⚠ {t.naOverBig}</div>}
+            {okNa && today.na>=MAX_NA-3 && today.na>0 &&
+              <div style={{fontSize:12,color:"var(--amber)",marginTop:6}}>{t.naWarnBig}</div>}
           </div>
           <div style={{fontSize:11.5,color:"var(--muted)",marginTop:12}}>{t.targetHint}</div>
         </div>);
@@ -762,6 +868,7 @@ function AgentView({t,me,showToast}){
           </tbody>
         </table>}
       </div>
+      </>}
 
       {logFor && <LogCallModal t={t} client={logFor} me={me}
         onClose={()=>setLogFor(null)}
@@ -1697,7 +1804,7 @@ function App(){
   if(!session) return <Login lang={lang} setLang={setLang} onLogin={()=>{}}/>;
   if(!me) return <div className="spin"></div>;
 
-  const adminTabs=[["dashboard",t.dashboard],["customers",t.customers],["assign",t.assign],["import",t.importT],["reports",t.reports],["confirmed",t.confirmed]];
+  const adminTabs=[["dashboard",t.dashboard],["customers",t.customers],["assign",t.assign],["import",t.importT],["reports",t.reports],["confirmed",t.confirmed],["board","🏆 "+t.leaderboard]];
 
   return (
     <div>
@@ -1716,6 +1823,7 @@ function App(){
           tab==="assign"? <AdminAssign t={t} showToast={showToast}/> :
           tab==="import"? <AdminImport t={t} showToast={showToast}/> :
           tab==="confirmed"? <AdminConfirmed t={t} showToast={showToast}/> :
+          tab==="board"? <Leaderboard t={t} me={me}/> :
           <AdminReports t={t} showToast={showToast}/>
         ) : (
           <AgentView t={t} me={me} showToast={showToast}/>
