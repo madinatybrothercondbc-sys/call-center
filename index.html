@@ -809,6 +809,7 @@ function AdminAssign({t,showToast}){
   const [count,setCount]=useState(50);
   const [city,setCity]=useState("");
   const [onlyNew,setOnlyNew]=useState(true);
+  const [recycledOnly,setRecycledOnly]=useState(false);
   const [cities,setCities]=useState([]);
   const [busy,setBusy]=useState(false);
   const [avail,setAvail]=useState(null);
@@ -825,11 +826,12 @@ function AdminAssign({t,showToast}){
       .is("assigned_to",null).eq("do_not_call",false);
     if(onlyNew) query=query.eq("status","new");
     if(city) query=query.eq("city",city);
+    if(recycledOnly) query=query.neq("tried_agents","{}"); // only recycled (someone tried before)
     // exclude clients this agent already tried (recycled away from them)
     if(agentId) query=query.not("tried_agents","cs","{"+agentId+"}");
     const {count:c}=await query;
     setAvail(c||0);
-  },[city,onlyNew,agentId]);
+  },[city,onlyNew,recycledOnly,agentId]);
   useEffect(()=>{checkAvail();},[checkAvail]);
 
   async function assign(){
@@ -838,6 +840,7 @@ function AdminAssign({t,showToast}){
     let query=sb.from("clients").select("id").is("assigned_to",null).eq("do_not_call",false);
     if(onlyNew) query=query.eq("status","new");
     if(city) query=query.eq("city",city);
+    if(recycledOnly) query=query.neq("tried_agents","{}");
     // never re-assign a client to an agent who already failed it 3x
     query=query.not("tried_agents","cs","{"+agentId+"}");
     query=query.limit(count);
@@ -868,10 +871,14 @@ function AdminAssign({t,showToast}){
         <label className="fld"><span>{t.howMany}</span>
           <input type="number" min="1" max="1000" value={count}
             onChange={e=>setCount(Math.max(1,parseInt(e.target.value)||1))}/></label>
-        <label className="row" style={{gap:9,marginBottom:18,cursor:"pointer"}}>
+        <label className="row" style={{gap:9,marginBottom:12,cursor:"pointer"}}>
           <input type="checkbox" style={{width:"auto"}} checked={onlyNew}
             onChange={e=>setOnlyNew(e.target.checked)}/>
           <span style={{color:"var(--muted)",fontSize:14}}>{t.onlyNew}</span></label>
+        <label className="row" style={{gap:9,marginBottom:18,cursor:"pointer"}}>
+          <input type="checkbox" style={{width:"auto"}} checked={recycledOnly}
+            onChange={e=>setRecycledOnly(e.target.checked)}/>
+          <span style={{color:"var(--amber)",fontSize:14}}>♻ {t.recycledFilter}</span></label>
         <div style={{fontSize:13,color:"var(--muted)",marginBottom:14}}>
           {avail===null?"…":avail} {t.unassigned.toLowerCase()} · {t.remaining}</div>
         <button className="btn-primary" style={{width:"100%"}} disabled={busy} onClick={assign}>
