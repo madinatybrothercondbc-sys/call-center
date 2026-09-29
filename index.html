@@ -180,7 +180,7 @@ const T = {
     callsLeftBig:"more calls to reach your target", targetDoneBig:"You hit your daily target! 🎉",
     naWarnBig:"Careful — you're near the no-answer limit.", naOverBig:"You're over the no-answer limit.",
     callsLeftLabel:"more calls", ansLeftLabel:"more answered", answeredToday:"Answered today",
-    naTodayInfo:"No-answers today", targetHint2:"Target: at least 50 total calls AND 30 answered calls.",
+    naTodayInfo:"No-answers today", targetHint2:"Target: 50 total calls AND 30 answered. No-answer and wrong-number don't count as answered.",
   },
   ar: {
     dir:"rtl", appName:"براذر كوند", tagline:"للتكييف · مركز الاتصال",
@@ -263,7 +263,7 @@ const T = {
     callsLeftBig:"مكالمة متبقية للوصول إلى هدفك", targetDoneBig:"لقد حققت هدفك اليومي! 🎉",
     naWarnBig:"انتبه — أنت قريب من حد عدم الرد.", naOverBig:"لقد تجاوزت حد عدم الرد.",
     callsLeftLabel:"مكالمة متبقية", ansLeftLabel:"رد متبقٍ", answeredToday:"تم الرد اليوم",
-    naTodayInfo:"عدم الرد اليوم", targetHint2:"الهدف: 50 مكالمة إجمالاً على الأقل + 30 مكالمة تم الرد عليها.",
+    naTodayInfo:"عدم الرد اليوم", targetHint2:"الهدف: 50 مكالمة إجمالاً + 30 تم الرد عليها. عدم الرد والرقم الخطأ لا يُحتسبان ردًا.",
   }
 };
 
@@ -744,7 +744,8 @@ function AgentView({t,me,showToast}){
       .eq("agent_id",me.id).gte("created_at",start.toISOString()).lte("created_at",end.toISOString());
     const calls=(logs||[]).length;
     const na=(logs||[]).filter(l=>l.outcome==="no_answer").length;
-    const answered=calls-na; // everything except no-answer counts as answered
+    // "answered" = a real reached call: everything EXCEPT no-answer and wrong-number
+    const answered=(logs||[]).filter(l=>l.outcome!=="no_answer" && l.outcome!=="wrong_number").length;
     setToday({calls,na,answered});
   },[me.id]);
   useEffect(()=>{load();},[load]);
@@ -1109,7 +1110,9 @@ function AuditPanel({t}){
         </tr></thead>
         <tbody>
         {rows.map(r=>{
-          const answered=r.calls-r.no_answers; // all except no-answer
+          // "answered" from the view = reached (excludes no-answer AND wrong-number).
+          // Fallback for older view without the column: subtract both if present.
+          const answered=(r.answered!=null)? r.answered : (r.calls-r.no_answers-(r.wrong_numbers||0));
           const okCalls=r.calls>=MIN_CALLS, okAns=answered>=MIN_ANSWERED, pass=okCalls&&okAns;
           return (
           <tr key={r.agent_id}>
