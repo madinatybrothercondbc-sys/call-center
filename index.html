@@ -171,6 +171,11 @@ const T = {
     pass:"Pass", fail:"Needs review", minCalls:"Min calls", maxNa:"Max no-answers",
     belowCalls:"Below 50", aboveNa:"Over 20 no-answers", auditDate:"Date", belowAns:"Below 30",
     recycled:"Recycled", triedBy:"Already tried by", recycledFilter:"Recycled only",
+    zone:"Zone", zoneAll:"All zones", zoneNear:"Near (call first)", zoneMid:"Medium", zoneFar:"Far", zoneUnknown:"No area",
+    recallOnly:"Follow-ups (due for re-call)", recallHint:"Clients called 7+ days ago who didn't buy — ready for another round.",
+    deductions:"Deductions", myDeductions:"My deductions", noDeductions:"No deductions 🎉",
+    dedDate:"Date", dedReason:"Reason", dedAmount:"Deduction", halfDay:"½ day", totalDed:"Total deducted",
+    daysLabel:"days",
     myProgress:"My progress today", targetMet:"Target met 🎉", targetNotMet:"Target not met yet",
     callsToday2:"Calls today", naToday:"No-answers today", toGo:"to go",
     targetHint:"Target: at least 50 calls, no more than 20 no-answers.", overLimit:"over limit",
@@ -254,6 +259,11 @@ const T = {
     pass:"مطابق", fail:"يحتاج مراجعة", minCalls:"حد أدنى مكالمات", maxNa:"حد أقصى عدم رد",
     belowCalls:"أقل من 50", aboveNa:"أكثر من 20 عدم رد", auditDate:"التاريخ", belowAns:"أقل من 30",
     recycled:"مُعاد", triedBy:"جرّبه من قبل", recycledFilter:"المُعاد فقط",
+    zone:"المنطقة", zoneAll:"كل المناطق", zoneNear:"قريبة (الأولوية)", zoneMid:"متوسطة", zoneFar:"بعيدة", zoneUnknown:"بدون منطقة",
+    recallOnly:"المعاودة (مستحقة لإعادة الاتصال)", recallHint:"عملاء تم الاتصال بهم منذ 7 أيام أو أكثر ولم يشتروا — جاهزون لجولة أخرى.",
+    deductions:"الخصومات", myDeductions:"خصوماتي", noDeductions:"لا توجد خصومات 🎉",
+    dedDate:"التاريخ", dedReason:"السبب", dedAmount:"الخصم", halfDay:"نصف يوم", totalDed:"إجمالي الخصم",
+    daysLabel:"يوم",
     myProgress:"تقدّمي اليوم", targetMet:"تم تحقيق الهدف 🎉", targetNotMet:"لم يتحقق الهدف بعد",
     callsToday2:"مكالمات اليوم", naToday:"عدم الرد اليوم", toGo:"متبقٍ",
     targetHint:"المطلوب: 50 مكالمة على الأقل، و20 عدم رد كحد أقصى.", overLimit:"تجاوز الحد",
@@ -276,6 +286,25 @@ const OUTCOME_COLORS = {
 const OUTCOME_KEYS = ["answered","no_answer","call_back","interested",
                       "not_interested","wrong_number","blacklisted","closed_won"];
 const MIN_CALLS=50, MIN_ANSWERED=30; // daily target: >=50 total calls AND >=30 answered (non-no-answer) calls
+
+/* ---- GEO ZONES (relative to East/Southeast head office) ----
+   near = prime, call first · mid = worth it, call next · far = low priority. */
+const ZONE_NEAR = ["مدينة نصر","مصر الجديدة","النزهة","الرحاب","التجمع","التجمع الخامس","التجمع الاول",
+  "العبور","الشروق","مدينتي","مدينة المستقبل","شيراتون","مساكن شيراتون","المعادي","المعادى","المقطم",
+  "القطامية","القطاميه","أرض الجولف","الماظة","منشية البكري","عين شمس","حدائق القبة","الزيتون",
+  "حلمية الزيتون","مصر القديمة","دار السلام","البساتين","روكسي","الميرغني","الميرغنى","الدمرداش"];
+const ZONE_MID = ["وسط البلد","العباسية","رمسيس","الظاهر","الزمالك","جاردن سيتي","جاردن ستي","عابدين",
+  "باب اللوق","القصر العيني","قصر النيل","المنيل","الحسين","المطرية","المرج","الخصوص","جسر السويس",
+  "الخانكه","الجبل الاصفر","صلاح سالم","العتبة","غمره","الحلمية","الحلمية الجديدة","روض الفرج",
+  "العاشر من رمضان","العاشر","مدينة المستقبل","حى السفارات","حي السفارات"];
+// everything else (الجيزة, المهندسين, الدقي, 6 أكتوبر, الشيخ زايد, فيصل, الساحل, الشرقية, بنها, etc.) = far
+function zoneOf(city){
+  const c=(city||"").trim();
+  if(!c) return "unknown";
+  if(ZONE_NEAR.includes(c)) return "near";
+  if(ZONE_MID.includes(c)) return "mid";
+  return "far";
+}
 
 /* ---------------- small helpers ---------------- */
 function useToast(){
@@ -477,6 +506,66 @@ function Leaderboard({t,me}){
               <td style={{fontSize:16}}>{i===0?"👑":i===1?"🥈":i===2?"🥉":""}</td>
             </tr>);
           })}
+          </tbody>
+        </table>}
+      </div>
+    </div>
+  );
+}
+
+/* ==================== DEDUCTIONS ==================== */
+function Deductions({t,me,adminView}){
+  const [rows,setRows]=useState(null);
+  const [agents,setAgents]=useState([]);
+  const [agentF,setAgentF]=useState("");
+  useEffect(()=>{(async()=>{
+    if(adminView){
+      const {data:ag}=await sb.from("profiles").select("id,full_name").eq("role","agent");
+      setAgents(ag||[]);
+    }
+  })();},[adminView]);
+  useEffect(()=>{(async()=>{
+    setRows(null);
+    let q=sb.from("deductions").select("*, profiles:agent_id(full_name)").order("day",{ascending:false});
+    if(!adminView) q=q.eq("agent_id",me.id);
+    else if(agentF) q=q.eq("agent_id",agentF);
+    const {data}=await q.limit(500);
+    setRows(data||[]);
+  })();},[adminView,agentF,me.id]);
+
+  const total=(rows||[]).reduce((a,r)=>a+Number(r.amount||0),0);
+  if(rows===null) return <div className="spin"></div>;
+  return (
+    <div className="grid" style={{gap:16}}>
+      <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div style={{fontSize:20,fontWeight:800}}>{adminView? t.deductions : t.myDeductions}</div>
+        <span className="pill" style={{fontSize:13,fontWeight:700,background:"var(--red)22",color:"var(--red)"}}>
+          {t.totalDed}: {total} {t.daysLabel}</span>
+      </div>
+      {adminView &&
+        <div className="card" style={{padding:14}}>
+          <select value={agentF} onChange={e=>setAgentF(e.target.value)} style={{maxWidth:280}}>
+            <option value="">{t.allAgents}</option>
+            {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
+          </select>
+        </div>}
+      <div className="card" style={{overflow:"auto"}}>
+        {rows.length===0? <div style={{padding:40,textAlign:"center",color:"var(--green)",fontWeight:700}}>{t.noDeductions}</div> :
+        <table>
+          <thead><tr>
+            {adminView && <th>{t.agentName}</th>}
+            <th>{t.dedDate}</th><th>{t.dedAmount}</th><th>{t.dedReason}</th>
+          </tr></thead>
+          <tbody>
+          {rows.map(r=>(
+            <tr key={r.id}>
+              {adminView && <td style={{fontWeight:600}}>{r.profiles?.full_name||"—"}</td>}
+              <td style={{whiteSpace:"nowrap"}}>{r.day}</td>
+              <td><span className="pill" style={{background:"var(--red)22",color:"var(--red)",fontSize:12}}>
+                {Number(r.amount)===0.5? t.halfDay : r.amount+" "+t.daysLabel}</span></td>
+              <td style={{fontSize:13,color:"var(--muted)"}}>{r.reason}</td>
+            </tr>
+          ))}
           </tbody>
         </table>}
       </div>
@@ -797,12 +886,14 @@ function AgentView({t,me,showToast}){
 
   return (
     <div className="grid" style={{gap:16}}>
-      <div className="tabbar" style={{maxWidth:360}}>
+      <div className="tabbar" style={{maxWidth:520}}>
         <button className={view==="calls"?"active":""} onClick={()=>setView("calls")}>{t.myCalls}</button>
         <button className={view==="board"?"active":""} onClick={()=>setView("board")}>🏆 {t.leaderboard}</button>
+        <button className={view==="deductions"?"active":""} onClick={()=>setView("deductions")}>{t.myDeductions}</button>
       </div>
 
-      {view==="board" ? <Leaderboard t={t} me={me}/> : <>
+      {view==="board" ? <Leaderboard t={t} me={me}/> :
+       view==="deductions" ? <Deductions t={t} me={me} adminView={false}/> : <>
       <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
         <div>
           <div style={{fontSize:13,color:"var(--muted)"}}>{t.welcome}, {me.full_name}</div>
@@ -1014,8 +1105,10 @@ function AdminAssign({t,showToast}){
   const [agentId,setAgentId]=useState("");
   const [count,setCount]=useState(50);
   const [city,setCity]=useState("");
+  const [zone,setZone]=useState("near"); // default to NEAR so best numbers go out first
   const [onlyNew,setOnlyNew]=useState(true);
   const [recycledOnly,setRecycledOnly]=useState(false);
+  const [recallMode,setRecallMode]=useState(false);
   const [cities,setCities]=useState([]);
   const [busy,setBusy]=useState(false);
   const [avail,setAvail]=useState(null);
@@ -1027,30 +1120,55 @@ function AdminAssign({t,showToast}){
     setCities((cl||[]).map(c=>c.city).filter(Boolean));
   })();},[]);
 
+  // apply the chosen zone to a query by city membership
+  function applyZone(query){
+    if(zone==="near") return query.in("city",ZONE_NEAR);
+    if(zone==="mid")  return query.in("city",ZONE_MID);
+    if(zone==="far")  return query.not("city","in","("+[...ZONE_NEAR,...ZONE_MID].map(c=>'"'+c+'"').join(",")+")").not("city","is",null).neq("city","");
+    if(zone==="unknown") return query.or("city.is.null,city.eq.");
+    return query; // all
+  }
+
   const checkAvail=useCallback(async()=>{
+    if(recallMode){
+      // recall pool: clients reached 7+ days ago that didn't buy, due for re-call
+      let q=sb.from("recall_due").select("id",{count:"exact",head:true});
+      if(city) q=q.eq("city",city);
+      const {count:c}=await q; setAvail(c||0); return;
+    }
     let query=sb.from("clients").select("id",{count:"exact",head:true})
       .is("assigned_to",null).eq("do_not_call",false);
     if(onlyNew) query=query.eq("status","new");
     if(city) query=query.eq("city",city);
+    else query=applyZone(query);
     if(recycledOnly) query=query.neq("tried_agents","{}"); // only recycled (someone tried before)
     // exclude clients this agent already tried (recycled away from them)
     if(agentId) query=query.not("tried_agents","cs","{"+agentId+"}");
     const {count:c}=await query;
     setAvail(c||0);
-  },[city,onlyNew,recycledOnly,agentId]);
+  },[city,zone,onlyNew,recycledOnly,recallMode,agentId]);
   useEffect(()=>{checkAvail();},[checkAvail]);
 
   async function assign(){
     if(!agentId){ showToast(t.selectAgent,true); return; }
     setBusy(true);
-    let query=sb.from("clients").select("id").is("assigned_to",null).eq("do_not_call",false);
-    if(onlyNew) query=query.eq("status","new");
-    if(city) query=query.eq("city",city);
-    if(recycledOnly) query=query.neq("tried_agents","{}");
-    // never re-assign a client to an agent who already failed it 3x
-    query=query.not("tried_agents","cs","{"+agentId+"}");
-    query=query.limit(count);
-    const {data:rows,error}=await query;
+    let rows, error;
+    if(recallMode){
+      let q=sb.from("recall_due").select("id");
+      if(city) q=q.eq("city",city);
+      q=q.limit(count);
+      ({data:rows,error}=await q);
+    } else {
+      let query=sb.from("clients").select("id").is("assigned_to",null).eq("do_not_call",false);
+      if(onlyNew) query=query.eq("status","new");
+      if(city) query=query.eq("city",city);
+      else query=applyZone(query);
+      if(recycledOnly) query=query.neq("tried_agents","{}");
+      // never re-assign a client to an agent who already failed it 3x
+      query=query.not("tried_agents","cs","{"+agentId+"}");
+      query=query.limit(count);
+      ({data:rows,error}=await query);
+    }
     if(error){ setBusy(false); showToast(error.message,true); return; }
     const ids=(rows||[]).map(r=>r.id);
     if(ids.length===0){ setBusy(false); showToast(t.noData,true); return; }
@@ -1071,18 +1189,33 @@ function AdminAssign({t,showToast}){
             <option value="">—</option>
             {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
           </select></label>
+        <label className="fld"><span>{t.zone}</span>
+          <select value={zone} onChange={e=>setZone(e.target.value)} disabled={!!city||recallMode}
+            style={(city||recallMode)?{opacity:.5}:{}}>
+            <option value="near">⭐ {t.zoneNear}</option>
+            <option value="mid">{t.zoneMid}</option>
+            <option value="far">{t.zoneFar}</option>
+            <option value="unknown">{t.zoneUnknown}</option>
+            <option value="all">{t.zoneAll}</option>
+          </select></label>
         <label className="fld"><span>{t.byCity}</span>
           <SearchSelect value={city} onChange={setCity} options={cities}
             placeholder={t.searchCity} allLabel={t.allCities}/></label>
         <label className="fld"><span>{t.howMany}</span>
           <input type="number" min="1" max="1000" value={count}
             onChange={e=>setCount(Math.max(1,parseInt(e.target.value)||1))}/></label>
-        <label className="row" style={{gap:9,marginBottom:12,cursor:"pointer"}}>
-          <input type="checkbox" style={{width:"auto"}} checked={onlyNew}
+        <label className="row" style={{gap:9,marginBottom:8,cursor:"pointer",padding:"8px 10px",
+            borderRadius:9,background:recallMode?"var(--teal)18":"transparent"}}>
+          <input type="checkbox" style={{width:"auto"}} checked={recallMode}
+            onChange={e=>setRecallMode(e.target.checked)}/>
+          <span style={{color:"var(--teal)",fontSize:14,fontWeight:700}}>🔁 {t.recallOnly}</span></label>
+        {recallMode && <div style={{fontSize:11.5,color:"var(--muted)",marginBottom:12}}>{t.recallHint}</div>}
+        <label className="row" style={{gap:9,marginBottom:12,cursor:"pointer",opacity:recallMode?.4:1}}>
+          <input type="checkbox" style={{width:"auto"}} checked={onlyNew} disabled={recallMode}
             onChange={e=>setOnlyNew(e.target.checked)}/>
           <span style={{color:"var(--muted)",fontSize:14}}>{t.onlyNew}</span></label>
-        <label className="row" style={{gap:9,marginBottom:18,cursor:"pointer"}}>
-          <input type="checkbox" style={{width:"auto"}} checked={recycledOnly}
+        <label className="row" style={{gap:9,marginBottom:18,cursor:"pointer",opacity:recallMode?.4:1}}>
+          <input type="checkbox" style={{width:"auto"}} checked={recycledOnly} disabled={recallMode}
             onChange={e=>setRecycledOnly(e.target.checked)}/>
           <span style={{color:"var(--amber)",fontSize:14}}>♻ {t.recycledFilter}</span></label>
         <div style={{fontSize:13,color:"var(--muted)",marginBottom:14}}>
@@ -1849,7 +1982,7 @@ function App(){
   if(!session) return <Login lang={lang} setLang={setLang} onLogin={()=>{}}/>;
   if(!me) return <div className="spin"></div>;
 
-  const adminTabs=[["dashboard",t.dashboard],["customers",t.customers],["assign",t.assign],["import",t.importT],["reports",t.reports],["confirmed",t.confirmed],["board","🏆 "+t.leaderboard]];
+  const adminTabs=[["dashboard",t.dashboard],["customers",t.customers],["assign",t.assign],["import",t.importT],["reports",t.reports],["confirmed",t.confirmed],["board","🏆 "+t.leaderboard],["deductions",t.deductions]];
 
   return (
     <div>
@@ -1869,6 +2002,7 @@ function App(){
           tab==="import"? <AdminImport t={t} showToast={showToast}/> :
           tab==="confirmed"? <AdminConfirmed t={t} showToast={showToast}/> :
           tab==="board"? <Leaderboard t={t} me={me}/> :
+          tab==="deductions"? <Deductions t={t} me={me} adminView={true}/> :
           <AdminReports t={t} showToast={showToast}/>
         ) : (
           <AgentView t={t} me={me} showToast={showToast}/>
