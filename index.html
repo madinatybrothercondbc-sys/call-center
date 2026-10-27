@@ -108,7 +108,9 @@ const T = {
     search:"Search name / phone…", city:"City", allCities:"All cities",
     status:"Status", allStatus:"All statuses", callback:"Callbacks due",
     logCall:"Log call", history:"History", noClients:"No clients to call right now.",
-    outcome:"Outcome", feedback:"Feedback (optional)", callbackTime:"Call back at",
+    outcome:"Outcome", feedback:"Feedback", callbackTime:"Call back at",
+    feedbackReq:"Call notes (required)", feedbackPh:"What happened in the call? (required)",
+    feedbackRequired:"Please write what happened in the call before saving.",
     save:"Save call", saving:"Saving…", cancel:"Cancel",
     name:"Name", phone:"Phone", location:"Location", assignedTo:"Assigned to",
     unassigned:"Unassigned", lastOutcome:"Last outcome", actions:"Actions",
@@ -196,7 +198,9 @@ const T = {
     search:"ابحث بالاسم أو الرقم…", city:"المدينة", allCities:"كل المدن",
     status:"الحالة", allStatus:"كل الحالات", callback:"مواعيد المعاودة",
     logCall:"تسجيل مكالمة", history:"السجل", noClients:"لا يوجد عملاء للاتصال الآن.",
-    outcome:"نتيجة المكالمة", feedback:"ملاحظات (اختياري)", callbackTime:"معاودة الاتصال في",
+    outcome:"نتيجة المكالمة", feedback:"ملاحظات", callbackTime:"معاودة الاتصال في",
+    feedbackReq:"ملاحظات المكالمة (مطلوب)", feedbackPh:"ماذا حدث في المكالمة؟ (مطلوب)",
+    feedbackRequired:"برجاء كتابة ما حدث في المكالمة قبل الحفظ.",
     save:"حفظ المكالمة", saving:"جارٍ الحفظ…", cancel:"إلغاء",
     name:"الاسم", phone:"الهاتف", location:"العنوان", assignedTo:"مُسند إلى",
     unassigned:"غير مُسند", lastOutcome:"آخر نتيجة", actions:"إجراءات",
@@ -639,6 +643,7 @@ function LogCallModal({t,client,me,onClose,onSaved,showToast}){
   // step 2 (activity)
   const [outcome,setOutcome]=useState("");
   const [feedback,setFeedback]=useState("");
+  const [fbError,setFbError]=useState(false);
   const [cbAt,setCbAt]=useState("");
   const [busyAct,setBusyAct]=useState(false);
   // step 1 (data)
@@ -696,6 +701,8 @@ function LogCallModal({t,client,me,onClose,onSaved,showToast}){
   // STEP 2 — save call activity
   async function saveActivity(){
     if(!outcome){ showToast(t.pickOutcome,true); return; }
+    if(!feedback || !feedback.trim()){ setFbError(true); showToast(t.feedbackRequired,true); return; }
+    setFbError(false);
     setBusyAct(true);
     const row={client_id:client.id, agent_id:me.id, outcome, feedback:feedback||null,
       callback_at:(outcome==="call_back" && cbAt)? new Date(cbAt).toISOString(): null};
@@ -762,8 +769,13 @@ function LogCallModal({t,client,me,onClose,onSaved,showToast}){
           {outcome==="call_back" &&
             <label className="fld"><span>{t.callbackTime}</span>
               <input type="datetime-local" value={cbAt} onChange={e=>setCbAt(e.target.value)}/></label>}
-          <label className="fld"><span>{t.feedback}</span>
-            <textarea rows="3" value={feedback} onChange={e=>setFeedback(e.target.value)}></textarea></label>
+          <label className="fld"><span>{t.feedbackReq} <span style={{color:"var(--red)"}}>*</span></span>
+            <textarea rows="3" value={feedback}
+              onChange={e=>{setFeedback(e.target.value); if(e.target.value.trim()) setFbError(false);}}
+              placeholder={t.feedbackPh}
+              style={fbError?{borderColor:"var(--red)",background:"var(--red)11"}:{}}></textarea>
+            {fbError && <div style={{color:"var(--red)",fontSize:12.5,fontWeight:700,marginTop:6}}>⚠ {t.feedbackRequired}</div>}
+          </label>
           <button className="btn-primary" style={{width:"100%"}} disabled={busyAct} onClick={saveActivity}>
             {busyAct?t.saving:t.saveActivity}</button>
         </div>
